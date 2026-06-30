@@ -23,6 +23,9 @@ namespace NRTDP.tdReportConverter
             SetScoreTypeDict();
         }
 
+        // Empty ResultParameter is the runtime signal: TDPortal populates it, ProSight PD doesn't.
+        public bool IsProSightPD => !_db.ResultParameter.Any();
+
         /// <summary>
         /// Returns 'DBSequences' AKA isoforms for a rawfile (if specified) that pass an FDR.
         /// </summary>
@@ -462,10 +465,11 @@ namespace NRTDP.tdReportConverter
                             select new
                             {
                                 gqvalue = q1.GlobalQvalue,
-                                pscore = ps.Value,
-                                escore = es.Value,
-                                cscore = cs.Value,
-                                Cleavages = pcs.Value,
+                                // cScore is NULL for uncharacterized ProSight PD hits; coalesce to 0 (EF5's old default).
+                                pscore = ps.Value ?? 0,
+                                escore = es.Value ?? 0,
+                                cscore = cs.Value ?? 0,
+                                Cleavages = pcs.Value ?? 0,
                                 ChemId = c.Id,
                                 HitId = h.Id,
                                 ObsPreMass = h.ObservedPrecursorMass,

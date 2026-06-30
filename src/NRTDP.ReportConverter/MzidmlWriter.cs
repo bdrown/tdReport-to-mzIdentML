@@ -50,7 +50,7 @@ namespace NRTDP.tdReportConverter
                     writer.WriteStartDoc();
                     writer.WriteMzIDStartElement(inputFileInfo.Name);
                     writer.WriteMzIDCVList();
-                    writer.WriteAnalysisSoftwareList();
+                    writer.WriteAnalysisSoftwareList(_db);
                     writer.WriteProviderAndAuditCollection();
                     writer.WriteSequenceCollection(_db, FDR, dataset.Key);
                     writer.WriteAnalysisCollection(_db, FDR, dataset.Key);
@@ -107,7 +107,7 @@ namespace NRTDP.tdReportConverter
                 writer.WriteStartDoc();
                 writer.WriteMzIDStartElement(inputFileInfo.Name);
                 writer.WriteMzIDCVList();
-                writer.WriteAnalysisSoftwareList();
+                writer.WriteAnalysisSoftwareList(_db);
                 writer.WriteProviderAndAuditCollection();
                 writer.WriteSequenceCollection(_db, FDR);
                 writer.WriteAnalysisCollection(_db, FDR);
@@ -142,7 +142,7 @@ namespace NRTDP.tdReportConverter
                     writer.WriteStartDoc();
                     writer.WriteMzIDStartElement(inputFileInfo.Name);
                     writer.WriteMzIDCVList();
-                    writer.WriteAnalysisSoftwareList();
+                    writer.WriteAnalysisSoftwareList(_db);
                     writer.WriteProviderAndAuditCollection();
                     writer.WriteSequenceCollection(_db, FDR, dataset.Key);
                     writer.WriteAnalysisCollection(_db, FDR, dataset.Key);
@@ -654,14 +654,17 @@ namespace NRTDP.tdReportConverter
             this.WriteAttributeString("creationDate", $"{DateTime.Now}");
         }
 
-        private void WriteAnalysisSoftwareList()
+        private void WriteAnalysisSoftwareList(IOpenTDReport db)
         {
+            bool isProSightPD = db.IsProSightPD;
+
             this.WriteStartElement("AnalysisSoftwareList");
-            //toDo differentiate from TDPortal and PC
             this.WriteStartElement("AnalysisSoftware");
+            // id stays "AS_TDPortal" (referenced by analysisSoftware_ref elsewhere); only name + CV term vary.
             this.WriteAttributeString("id", "AS_TDPortal");
-            this.WriteAttributeString("name", "TDPortal");
-            this.WriteAttributeString("version", "4.0.0");
+            this.WriteAttributeString("name", isProSightPD ? "ProSight PD" : "TDPortal");
+            if (!isProSightPD)
+                this.WriteAttributeString("version", "4.0.0");
             this.WriteAttributeString("uri", "http://www.kelleher.northwestern.edu/");
 
             this.WriteStartElement("ContactRole");
@@ -673,8 +676,10 @@ namespace NRTDP.tdReportConverter
 
             this.WriteStartElement("SoftwareName");
 
-            this.WriteCVParam("MS:1003142", "TDPortal");
-            //this.WriteCVParam("MS:1003141", "ProSight"); //get Accession#
+            if (isProSightPD)
+                this.WriteCVParam("MS:1003141", "ProSight");
+            else
+                this.WriteCVParam("MS:1003142", "TDPortal");
 
             this.WriteEndElement(); //end SoftwareName
 
@@ -820,17 +825,26 @@ namespace NRTDP.tdReportConverter
 
                 this.WriteStartElement("FragmentTolerance");
 
-                if (ResultSetParameters["fragment_tolerance"].TrimEnd(null).EndsWith("ppm"))
+                // ProSight PD has no fragment_tolerance (empty ResultParameter); guard + emit -1 like the precursor block below.
+                if (ResultSetParameters.ContainsKey("fragment_tolerance"))
                 {
-                    var tol = Double.Parse(ResultSetParameters["fragment_tolerance"].Remove(ResultSetParameters["fragment_tolerance"].IndexOf('p'), 3));
-                    this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
-                    this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
+                    if (ResultSetParameters["fragment_tolerance"].TrimEnd(null).EndsWith("ppm"))
+                    {
+                        var tol = Double.Parse(ResultSetParameters["fragment_tolerance"].Remove(ResultSetParameters["fragment_tolerance"].IndexOf('p'), 3));
+                        this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
+                        this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
+                    }
+                    else if (ResultSetParameters["fragment_tolerance"].TrimEnd(null).EndsWith("Da"))
+                    {
+                        var tol = Double.Parse(ResultSetParameters["fragment_tolerance"].Remove(ResultSetParameters["fragment_tolerance"].LastIndexOf('D'), 2));
+                        this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000221", "dalton");
+                        this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000221", "dalton");
+                    }
                 }
-                else if (ResultSetParameters["fragment_tolerance"].TrimEnd(null).EndsWith("Da"))
+                else
                 {
-                    var tol = Double.Parse(ResultSetParameters["fragment_tolerance"].Remove(ResultSetParameters["fragment_tolerance"].LastIndexOf('D'), 2));
-                    this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000221", "dalton");
-                    this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000221", "dalton");
+                    this.WriteCVParam("MS:1001412", "search tolerance plus value", $"-1", "UO", "UO:0000221", "dalton");
+                    this.WriteCVParam("MS:1001413", "search tolerance minus value", $"-1", "UO", "UO:0000221", "dalton");
                 }
 
                 this.WriteEndElement();
@@ -963,7 +977,9 @@ namespace NRTDP.tdReportConverter
                         this.WriteAttributeString("location", $"{pepmod.StartIndex + 1}");
                         this.WriteAttributeString("monoisotopicMassDelta", $"{pepmod.DiffMono}");
                         this.WriteAttributeString("avgMassDelta", $"{pepmod.DiffAverage}");
-                        this.WriteAttributeString("residues", $"{pepmod.AminoAcid}");
+                        // Omit the optional residues attr when absent (ProSight PD terminal mods) rather than emit residues="".
+                        if (!string.IsNullOrEmpty(pepmod.AminoAcid))
+                            this.WriteAttributeString("residues", pepmod.AminoAcid);
                         this.WriteCVParam($"{pepmod.ModSetId}:{pepmod.ModId}", pepmod.ModName, cvRef: pepmod.ModSetId);
                         this.WriteEndElement();
                     }

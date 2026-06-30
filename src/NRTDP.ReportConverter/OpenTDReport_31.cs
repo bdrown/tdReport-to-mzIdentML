@@ -23,6 +23,9 @@ namespace NRTDP.tdReportConverter
             SetScoreTypeDict();
         }
 
+        // v3.1 predates ProSight PD (which only emits v4.0), so always TDPortal-provenance.
+        public bool IsProSightPD => false;
+
         public void SetScoreTypeDict()
         {
             var entry_quiry = from st in _db.ScoreType

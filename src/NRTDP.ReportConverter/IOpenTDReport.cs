@@ -8,6 +8,12 @@ namespace NRTDP.tdReportConverter
     /// </summary>
     public interface IOpenTDReport
     {
+        /// <summary>
+        /// True when the report came from ProSight PD rather than TDPortal (detected via the
+        /// empty ResultParameter table). Drives AnalysisSoftware provenance and parameter guards.
+        /// </summary>
+        bool IsProSightPD { get; }
+
         List<DBSequence> GetDBSequences(double FDR, int? dataSetId = null);
         Dictionary<string, double> GetMassTable();
         Dictionary<int, string> GetResultSets();
