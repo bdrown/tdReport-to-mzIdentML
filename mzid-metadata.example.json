@@ -1,0 +1,30 @@
+{
+  "submitter": {
+    "firstName": "Jane",
+    "lastName": "Doe",
+    "email": "jane.doe@example.edu",
+    "organization": "Example University",
+    "organizationUri": "https://example.edu/"
+  },
+
+  "software": {
+    "name": "ProSight PD",
+    "version": "4.3",
+    "uri": "https://www.thermofisher.com/"
+  },
+
+  "searchDatabase": {
+    "name": "UniProt human (reviewed)",
+    "version": "2024_01",
+    "location": "https://ftp.uniprot.org/.../UP000005640_9606.xml",
+    "taxonomy": "Homo sapiens (9606)",
+    "numDatabaseSequences": 20420
+  },
+
+  "spectraData": {
+    "fileFormatAccession": "MS:1000563",
+    "fileFormatName": "Thermo RAW format",
+    "idFormatAccession": "MS:1000768",
+    "idFormatName": "Thermo nativeID format"
+  }
+}

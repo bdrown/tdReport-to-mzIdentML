@@ -42,6 +42,7 @@ namespace NRTDP.TDReport4
         public DbSet<ScanHeaderToSpectrum> ScanHeaderToSpectrum { get; set; }
         public DbSet<ScanHeader> ScanHeader { get; set; }
         public DbSet<ScoreType> ScoreType { get; set; }
+        public DbSet<DbMetadata> DbMetadata { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder options)
         {
@@ -107,6 +108,13 @@ namespace NRTDP.TDReport4
         public string IonTypeId { get; set; }
         public int HitId { get; set; }
 
+    }
+    // tdReport key/value metadata table (e.g. reporting_version, GenerateBatchedTargetPufDbHT).
+    public class DbMetadata
+    {
+        [Key]
+        public string MetadataKey { get; set; }
+        public string? Value { get; set; }
     }
     public class Modification
     {

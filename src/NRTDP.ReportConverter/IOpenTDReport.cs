@@ -14,6 +14,13 @@ namespace NRTDP.tdReportConverter
         /// </summary>
         bool IsProSightPD { get; }
 
+        /// <summary>
+        /// Software version recorded in the report, or null when none is stored (e.g. ProSight PD).
+        /// For TDPortal this is the analysis codeset from DbMetadata. The JSON metadata override
+        /// takes precedence over this when present.
+        /// </summary>
+        string? SoftwareVersion { get; }
+
         List<DBSequence> GetDBSequences(double FDR, int? dataSetId = null);
         Dictionary<string, double> GetMassTable();
         Dictionary<int, string> GetResultSets();

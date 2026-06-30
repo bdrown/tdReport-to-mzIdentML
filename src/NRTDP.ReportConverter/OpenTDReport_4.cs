@@ -26,6 +26,12 @@ namespace NRTDP.tdReportConverter
         // Empty ResultParameter is the runtime signal: TDPortal populates it, ProSight PD doesn't.
         public bool IsProSightPD => !_db.ResultParameter.Any();
 
+        // ProSight PD stores no software version; TDPortal records the analysis codeset.
+        public string? SoftwareVersion => IsProSightPD
+            ? null
+            : _db.DbMetadata.Where(m => m.MetadataKey == "GenerateBatchedTargetPufDbHT")
+                            .Select(m => m.Value).FirstOrDefault() ?? "4.0.0";
+
         /// <summary>
         /// Returns 'DBSequences' AKA isoforms for a rawfile (if specified) that pass an FDR.
         /// </summary>

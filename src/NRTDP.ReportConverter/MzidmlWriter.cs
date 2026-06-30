@@ -15,11 +15,28 @@ namespace NRTDP.tdReportConverter
     public sealed class MzidmlWriter : IDisposable
     {
         private XmlWriter _writer;
+        private readonly MzidMetadata _metadata;
 
-        private MzidmlWriter(Stream stream, Encoding encoding)
+        // Built-in defaults for metadata the tdReport doesn't contain; each is overridden
+        // per field by the JSON config (see MzidMetadata / mzid-metadata.example.json).
+        private const string DefaultFirstName = "Neil";
+        private const string DefaultLastName = "Kelleher";
+        private const string DefaultOrganization = "Northwestern University";
+        private const string DefaultSoftwareUri = "http://www.kelleher.northwestern.edu/";
+        private const string DefaultDbName = "Unknown database";
+        private const string DefaultDbLocation = "unknown";
+        private const string DefaultRawFormatAccession = "MS:1000563";
+        private const string DefaultRawFormatName = "Thermo RAW format";
+        private const string DefaultIdFormatAccession = "MS:1000768";
+        private const string DefaultIdFormatName = "Thermo nativeID format";
+
+        private MzidmlWriter(Stream stream, Encoding encoding, MzidMetadata? metadata)
         {
             _writer = XmlWriter.Create(stream, new XmlWriterSettings { Encoding = encoding, Indent = true });
+            _metadata = metadata ?? new MzidMetadata();
         }
+
+        private static string AnalysisSoftwareId(IOpenTDReport db) => db.IsProSightPD ? "AS_ProSightPD" : "AS_TDPortal";
 
         /// <summary>
         /// Converts a tdReport into compressed mzidml files. One for each raw file in the tdReport.
@@ -27,7 +44,7 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output folder for the compressed mzidml files</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSeperateCompressedMzId(string TDReport, string outputFolder, double FDR = 0.05)
+        public static void ConvertToSeperateCompressedMzId(string TDReport, string outputFolder, double FDR = 0.05, MzidMetadata? metadata = null)
         {
             string tempFilePath = Path.GetTempFileName();
 
@@ -45,7 +62,7 @@ namespace NRTDP.tdReportConverter
 
                 // Write the opening and short xml with a single stream 
                 using (FileStream stream = File.Create(tempFilePath))
-                using (MzidmlWriter writer = new(stream, Encoding.ASCII))
+                using (MzidmlWriter writer = new(stream, Encoding.ASCII, metadata))
                 {
                     writer.WriteStartDoc();
                     writer.WriteMzIDStartElement(inputFileInfo.Name);
@@ -96,13 +113,13 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output file for the mzidml file (include the .mzidml)</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSingleMzId(string TDReport, string outputPath, double FDR = 0.05)
+        public static void ConvertToSingleMzId(string TDReport, string outputPath, double FDR = 0.05, MzidMetadata? metadata = null)
         {
             var inputFileInfo = new FileInfo(TDReport);
             var _db = TDReportVersionCheck(inputFileInfo.FullName);
 
             using (FileStream stream = File.Create(outputPath))
-            using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII))
+            using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII, metadata))
             {
                 writer.WriteStartDoc();
                 writer.WriteMzIDStartElement(inputFileInfo.Name);
@@ -122,7 +139,7 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output folder for the compressed mzidml files</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSeperateMzId(string TDReport, string outputFolder, double FDR = 0.05, IProgress<double>? progress = null)
+        public static void ConvertToSeperateMzId(string TDReport, string outputFolder, double FDR = 0.05, IProgress<double>? progress = null, MzidMetadata? metadata = null)
         {
             var inputFileInfo = new FileInfo(TDReport);
 
@@ -137,7 +154,7 @@ namespace NRTDP.tdReportConverter
                 var outputPath = Path.Join(outputFolder, $"{Path.GetFileNameWithoutExtension(rawFileName)}.mzid");
 
                 using (FileStream stream = File.Create(outputPath))
-                using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII))
+                using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII, metadata))
                 {
                     writer.WriteStartDoc();
                     writer.WriteMzIDStartElement(inputFileInfo.Name);
@@ -153,6 +170,21 @@ namespace NRTDP.tdReportConverter
             _db.Dispose();
         }
 
+        // Spectra source-file format CV terms; default to Thermo, overridable via JSON metadata.
+        private void WriteSpectraFileFormat()
+        {
+            var spectra = _metadata.SpectraData;
+            this.WriteStartElement("FileFormat");
+            this.WriteCVParam(spectra?.FileFormatAccession ?? DefaultRawFormatAccession,
+                              spectra?.FileFormatName ?? DefaultRawFormatName);
+            this.WriteEndElement();
+
+            this.WriteStartElement("SpectrumIDFormat");
+            this.WriteCVParam(spectra?.IdFormatAccession ?? DefaultIdFormatAccession,
+                              spectra?.IdFormatName ?? DefaultIdFormatName);
+            this.WriteEndElement();
+        }
+
         private void WriteDataCollection(IOpenTDReport db, FileInfo inputFileInfo, double FDR, int? dataSetId = null)
         {
             this.WriteStartElement("DataCollection");
@@ -162,13 +194,20 @@ namespace NRTDP.tdReportConverter
             this.WriteAttributeString("id", "SF_1"); // TODO: optional Add FileFormat - needs CVparam for TDReport File
             this.WriteEndElement();
 
-            this.WriteStartElement("SearchDatabase"); //Fake IT!
-            this.WriteAttributeString("location", "C:/123FakeSt");
+            var searchDb = _metadata.SearchDatabase;
+            this.WriteStartElement("SearchDatabase");
+            this.WriteAttributeString("location", searchDb?.Location ?? DefaultDbLocation);
             this.WriteAttributeString("id", "db1");
+            if (!string.IsNullOrEmpty(searchDb?.Version))
+                this.WriteAttributeString("version", searchDb.Version);
+            if (searchDb?.NumDatabaseSequences is long numDbSeq)
+                this.WriteAttributeString("numDatabaseSequences", $"{numDbSeq}");
             this.WriteStartElement("DatabaseName");
-            this.WriteUserParam("Database1");
-            this.WriteEndElement();
-            this.WriteEndElement();
+            this.WriteUserParam(searchDb?.Name ?? DefaultDbName);
+            this.WriteEndElement(); //end DatabaseName
+            if (!string.IsNullOrEmpty(searchDb?.Taxonomy))
+                this.WriteUserParam("taxonomy", searchDb.Taxonomy);
+            this.WriteEndElement(); //end SearchDatabase
 
             //SpectraDAta
             var dataFiles = db.GetDataFiles();
@@ -178,14 +217,7 @@ namespace NRTDP.tdReportConverter
                 this.WriteAttributeString("location", dataFiles[dataSetId.Value].Item2);
                 this.WriteAttributeString("id", $"SD_{dataSetId.Value}");
                 this.WriteAttributeString("name", $"SD_{dataFiles[dataSetId.Value].Item1}");
-                this.WriteStartElement("FileFormat");
-                this.WriteCVParam("MS:1000563", "Thermo RAW format");
-                this.WriteEndElement();
-
-                this.WriteStartElement("SpectrumIDFormat");
-                this.WriteCVParam("MS:1000768", "Thermo nativeID format");
-                this.WriteEndElement();
-
+                this.WriteSpectraFileFormat();
                 this.WriteEndElement();
             }
             else
@@ -196,14 +228,7 @@ namespace NRTDP.tdReportConverter
                     this.WriteAttributeString("location", file.Value.Item2);
                     this.WriteAttributeString("id", $"SD_{file.Key}");
                     this.WriteAttributeString("name", $"SD_{file.Value.Item1}");
-                    this.WriteStartElement("FileFormat");
-                    this.WriteCVParam("MS:1000563", "Thermo RAW format");
-                    this.WriteEndElement();
-
-                    this.WriteStartElement("SpectrumIDFormat");
-                    this.WriteCVParam("MS:1000768", "Thermo nativeID format");
-                    this.WriteEndElement();
-
+                    this.WriteSpectraFileFormat();
                     this.WriteEndElement();
                 }
             }
@@ -657,34 +682,26 @@ namespace NRTDP.tdReportConverter
         private void WriteAnalysisSoftwareList(IOpenTDReport db)
         {
             bool isProSightPD = db.IsProSightPD;
+            var software = _metadata.Software;
+            string name = software?.Name ?? (isProSightPD ? "ProSight PD" : "TDPortal");
+            string? version = software?.Version ?? db.SoftwareVersion;   // PD omits unless the JSON supplies it
+            string uri = software?.Uri ?? DefaultSoftwareUri;
 
             this.WriteStartElement("AnalysisSoftwareList");
             this.WriteStartElement("AnalysisSoftware");
-            // id stays "AS_TDPortal" (referenced by analysisSoftware_ref elsewhere); only name + CV term vary.
-            this.WriteAttributeString("id", "AS_TDPortal");
-            this.WriteAttributeString("name", isProSightPD ? "ProSight PD" : "TDPortal");
-            if (!isProSightPD)
-                this.WriteAttributeString("version", "4.0.0");
-            this.WriteAttributeString("uri", "http://www.kelleher.northwestern.edu/");
-
-            this.WriteStartElement("ContactRole");
-            this.WriteAttributeString("contact_ref", "ORG_NU");
-            this.WriteStartElement("Role");
-            this.WriteCVParam("MS:1001267", "software vendor");
-            this.WriteEndElement(); //end Role
-            this.WriteEndElement(); //end contact role
+            this.WriteAttributeString("id", AnalysisSoftwareId(db));
+            this.WriteAttributeString("name", name);
+            if (!string.IsNullOrEmpty(version))
+                this.WriteAttributeString("version", version);
+            this.WriteAttributeString("uri", uri);
 
             this.WriteStartElement("SoftwareName");
-
+            // CV term identifies the software family from provenance, even if name is overridden.
             if (isProSightPD)
                 this.WriteCVParam("MS:1003141", "ProSight");
             else
                 this.WriteCVParam("MS:1003142", "TDPortal");
-
             this.WriteEndElement(); //end SoftwareName
-
-            //TODO: Add Customizations? its optional Free text 
-            //_writer.WriteString(Customizations);
 
             this.WriteEndElement(); //end AnalysisSoftware
             this.WriteEndElement(); //end AnalysisSoftwareList
@@ -758,7 +775,7 @@ namespace NRTDP.tdReportConverter
                 this.WriteStartElement("SpectrumIdentificationProtocol");
                 this.WriteAttributeString("id", $"SIP_{ResultSet.Key}");
                 this.WriteAttributeString("name", $"{ResultSet.Value}");
-                this.WriteAttributeString("analysisSoftware_ref", "AS_TDPortal");
+                this.WriteAttributeString("analysisSoftware_ref", AnalysisSoftwareId(db));
                 this.WriteStartElement("SearchType");
 
                 this.WriteCVParam("MS:1001083", "ms-ms search");
@@ -890,7 +907,7 @@ namespace NRTDP.tdReportConverter
                 this.WriteStartElement("ProteinDetectionProtocol");
                 this.WriteAttributeString("id", $"PDP_{ResultSet.Key}");
 
-                this.WriteAttributeString("analysisSoftware_ref", "AS_TDPortal");
+                this.WriteAttributeString("analysisSoftware_ref", AnalysisSoftwareId(db));
                 this.WriteStartElement("AnalysisParams");
 
                 //protein determination parameters and report generation?
@@ -1043,7 +1060,14 @@ namespace NRTDP.tdReportConverter
 
         private void WriteProviderAndAuditCollection()
         {
-            //provider section
+            var submitter = _metadata.Submitter;
+            string firstName = submitter?.FirstName ?? DefaultFirstName;
+            string lastName = submitter?.LastName ?? DefaultLastName;
+            string organization = submitter?.Organization ?? DefaultOrganization;
+            string? email = submitter?.Email;
+            string? organizationUri = submitter?.OrganizationUri;
+
+            //provider section - who produced the document
             this.WriteStartElement("Provider");
             this.WriteAttributeString("id", "PROVIDER");
 
@@ -1055,32 +1079,24 @@ namespace NRTDP.tdReportConverter
             this.WriteEndElement(); //end contact role
             this.WriteEndElement(); //end Provider
 
-            //Audit Collection - Could take user name - stick with Neil for now
+            //Audit Collection - the submitter and their organization (override via JSON metadata)
             this.WriteStartElement("AuditCollection");
             this.WriteStartElement("Person");
-            this.WriteAttributeString("id", "");
-            this.WriteStartElement("Affiliation");
-            this.WriteAttributeString("organization_ref", "ORG_NU");
-            this.WriteEndElement(); //end 
-            this.WriteEndElement(); //end person
-
-            this.WriteStartElement("Person");
             this.WriteAttributeString("id", "PERSON_DOC_OWNER");
-            this.WriteAttributeString("firstName", "Neil");
-            this.WriteAttributeString("lastName", "Kelleher");
+            this.WriteAttributeString("firstName", firstName);
+            this.WriteAttributeString("lastName", lastName);
+            if (!string.IsNullOrEmpty(email))
+                this.WriteCVParam("MS:1000589", "contact email", email);
             this.WriteStartElement("Affiliation");
             this.WriteAttributeString("organization_ref", "ORG_DOC_OWNER");
-            this.WriteEndElement();
+            this.WriteEndElement(); //end Affiliation
             this.WriteEndElement(); //end person
-
-            this.WriteStartElement("Organization");
-            this.WriteAttributeString("id", "ORG_NU");
-            this.WriteAttributeString("name", "NorthWestern University");
-            this.WriteEndElement(); //end Organization
 
             this.WriteStartElement("Organization");
             this.WriteAttributeString("id", "ORG_DOC_OWNER");
-
+            this.WriteAttributeString("name", organization);
+            if (!string.IsNullOrEmpty(organizationUri))
+                this.WriteCVParam("MS:1000588", "contact URL", organizationUri);
             this.WriteEndElement(); //end Organization
             this.WriteEndElement(); //end AuditCollection
         }
