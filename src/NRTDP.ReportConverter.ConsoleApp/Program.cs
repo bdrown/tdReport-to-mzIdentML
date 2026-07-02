@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 
 namespace NRTDP.tdReportConverter.ConsoleApp
@@ -21,15 +22,38 @@ namespace NRTDP.tdReportConverter.ConsoleApp
                 return 1;
             }
 
-            var progress = new Progress<double>(pct => Console.WriteLine($"{(pct * 100):N2}"));
-
             string tdReport = args[0];
-            string outputFolder = args.Length >= 2 ? args[1] : new FileInfo(tdReport).Directory.FullName;
-            double fdr = args.Length >= 3 ? Convert.ToDouble(args[2]) : 0.01;
-            MzidMetadata metadata = MzidMetadata.Load(args.Length >= 4 ? args[3] : null);
+            if (!File.Exists(tdReport))
+            {
+                Console.Error.WriteLine($"Error: tdReport file not found: {tdReport}");
+                return 1;
+            }
 
-            MzidmlWriter.ConvertToSeperateMzId(tdReport, outputFolder, fdr, progress, metadata);
-            return 0;
+            string outputFolder = args.Length >= 2 ? args[1] : new FileInfo(tdReport).Directory.FullName;
+
+            double fdr = 0.01;
+            if (args.Length >= 3 && !double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out fdr))
+            {
+                Console.Error.WriteLine($"Error: FDR must be a number (e.g. 0.01 for 1%); got: {args[2]}");
+                return 1;
+            }
+
+            string metadataPath = args.Length >= 4 ? args[3] : null;
+            if (metadataPath is not null && !File.Exists(metadataPath))
+                Console.Error.WriteLine($"Warning: metadata file not found, using built-in defaults: {metadataPath}");
+
+            try
+            {
+                Directory.CreateDirectory(outputFolder);
+                var progress = new Progress<double>(pct => Console.WriteLine($"{(pct * 100):N2}"));
+                MzidmlWriter.ConvertToSeperateMzId(tdReport, outputFolder, fdr, progress, MzidMetadata.Load(metadataPath));
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error: conversion failed: {ex.Message}");
+                return 1;
+            }
         }
 
         static void PrintHelp()

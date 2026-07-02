@@ -1,0 +1,19 @@
+# Normalize line endings: store text as LF in the repo, check out per-platform.
+* text=auto
+
+# Source / text files
+*.cs       text diff=csharp
+*.csproj   text
+*.props    text
+*.sln      text eol=crlf
+*.md       text
+*.json     text
+*.xsd      text
+*.yml      text
+*.yaml     text
+
+# Binary files (never normalize)
+*.zip      binary
+*.tdReport binary
+*.mzid     binary
+*.gz       binary
