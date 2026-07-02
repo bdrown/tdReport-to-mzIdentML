@@ -6,8 +6,21 @@ namespace NRTDP.tdReportConverter
     /// <summary>
     /// 
     /// </summary>
-    public interface IOpenTDReport
+    public interface IOpenTDReport : IDisposable
     {
+        /// <summary>
+        /// True when the report came from ProSight PD rather than TDPortal (detected via the
+        /// empty ResultParameter table). Drives AnalysisSoftware provenance and parameter guards.
+        /// </summary>
+        bool IsProSightPD { get; }
+
+        /// <summary>
+        /// Software version recorded in the report, or null when none is stored (e.g. ProSight PD).
+        /// For TDPortal this is the analysis codeset from DbMetadata. The JSON metadata override
+        /// takes precedence over this when present.
+        /// </summary>
+        string? SoftwareVersion { get; }
+
         List<DBSequence> GetDBSequences(double FDR, int? dataSetId = null);
         Dictionary<string, double> GetMassTable();
         Dictionary<int, string> GetResultSets();
@@ -26,7 +39,5 @@ namespace NRTDP.tdReportConverter
         Dictionary<int, Dictionary<int, SpectrumIdentificationItem_Hit>> CreateBatchOfHitsWithIons(int ResultSetId, int dataFileId, double FDR = 0.05);
 
             Dictionary<int, Dictionary<int, ProteinAmbiguityGroup>> GetproteinDetectiondata(int ResultSetId, int dataFileId, double FDR = 0.05);
-
-        void Dispose();
     }
 }

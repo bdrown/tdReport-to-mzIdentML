@@ -42,6 +42,7 @@ namespace NRTDP.TDReport4
         public DbSet<ScanHeaderToSpectrum> ScanHeaderToSpectrum { get; set; }
         public DbSet<ScanHeader> ScanHeader { get; set; }
         public DbSet<ScoreType> ScoreType { get; set; }
+        public DbSet<DbMetadata> DbMetadata { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder options)
         {
@@ -108,6 +109,13 @@ namespace NRTDP.TDReport4
         public int HitId { get; set; }
 
     }
+    // tdReport key/value metadata table (e.g. reporting_version, GenerateBatchedTargetPufDbHT).
+    public class DbMetadata
+    {
+        [Key]
+        public string MetadataKey { get; set; }
+        public string? Value { get; set; }
+    }
     public class Modification
     {
        
@@ -121,7 +129,8 @@ namespace NRTDP.TDReport4
         public double DiffMonoisotopic { get; set; }
         public string DiffFormula { get; set; }
 
-        public string Residues { get; set; }
+        // Nullable: ProSight PD leaves Residues NULL for terminal mods; EF10 throws on NULL unless nullable.
+        public string? Residues { get; set; }
         public int Terminus { get; set; }
 
     }
@@ -170,7 +179,10 @@ namespace NRTDP.TDReport4
         public int HitId { get; set; }
 
         public int ScoreTypeId { get; set; }
-        public double Value { get; set; }
+
+        // Nullable: some ProSight PD scores (e.g. cScore) are NULL. Must be nullable at the entity
+        // level — EF10 optimizes away projection-side coalesces on non-nullable props and still throws.
+        public double? Value { get; set; }
     }
     public class DecoyScore
     {

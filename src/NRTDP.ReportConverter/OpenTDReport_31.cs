@@ -23,6 +23,12 @@ namespace NRTDP.tdReportConverter
             SetScoreTypeDict();
         }
 
+        // v3.1 predates ProSight PD (which only emits v4.0), so always TDPortal-provenance.
+        public bool IsProSightPD => false;
+
+        // v3.1 stores no codeset version; supply it via the JSON metadata override if needed.
+        public string? SoftwareVersion => null;
+
         public void SetScoreTypeDict()
         {
             var entry_quiry = from st in _db.ScoreType
@@ -696,7 +702,9 @@ namespace NRTDP.tdReportConverter
 
         public int EndIndex { get; set; }
         public string IsoformSeqence { get; set; }
-        public double ProteoformQValue { get; set; }
+        // Nullable: the biological-proteoform-level (agg=1) confidence exists only for CPR-registered
+        // bPFRs (TDPortal). ProSight PD is cPFR-only, so this is absent for most of its proteoforms.
+        public double? ProteoformQValue { get; set; }
 
 
 

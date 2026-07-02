@@ -15,11 +15,28 @@ namespace NRTDP.tdReportConverter
     public sealed class MzidmlWriter : IDisposable
     {
         private XmlWriter _writer;
+        private readonly MzidMetadata _metadata;
 
-        private MzidmlWriter(Stream stream, Encoding encoding)
+        // Built-in defaults for metadata the tdReport doesn't contain; each is overridden
+        // per field by the JSON config (see MzidMetadata / mzid-metadata.example.json).
+        private const string DefaultFirstName = "Neil";
+        private const string DefaultLastName = "Kelleher";
+        private const string DefaultOrganization = "Northwestern University";
+        private const string DefaultSoftwareUri = "http://www.kelleher.northwestern.edu/";
+        private const string DefaultDbName = "Unknown database";
+        private const string DefaultDbLocation = "unknown";
+        private const string DefaultRawFormatAccession = "MS:1000563";
+        private const string DefaultRawFormatName = "Thermo RAW format";
+        private const string DefaultIdFormatAccession = "MS:1000768";
+        private const string DefaultIdFormatName = "Thermo nativeID format";
+
+        private MzidmlWriter(Stream stream, Encoding encoding, MzidMetadata? metadata)
         {
             _writer = XmlWriter.Create(stream, new XmlWriterSettings { Encoding = encoding, Indent = true });
+            _metadata = metadata ?? new MzidMetadata();
         }
+
+        private static string AnalysisSoftwareId(IOpenTDReport db) => db.IsProSightPD ? "AS_ProSightPD" : "AS_TDPortal";
 
         /// <summary>
         /// Converts a tdReport into compressed mzidml files. One for each raw file in the tdReport.
@@ -27,13 +44,13 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output folder for the compressed mzidml files</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSeperateCompressedMzId(string TDReport, string outputFolder, double FDR = 0.05)
+        public static void ConvertToSeperateCompressedMzId(string TDReport, string outputFolder, double FDR = 0.05, MzidMetadata? metadata = null)
         {
             string tempFilePath = Path.GetTempFileName();
 
             var inputFileInfo = new FileInfo(TDReport);
 
-            var _db = TDReportVersionCheck(inputFileInfo.FullName);
+            using var _db = TDReportVersionCheck(inputFileInfo.FullName);
 
             var datasets = _db.GetDataFiles();
             double count = 0.0;
@@ -45,12 +62,12 @@ namespace NRTDP.tdReportConverter
 
                 // Write the opening and short xml with a single stream 
                 using (FileStream stream = File.Create(tempFilePath))
-                using (MzidmlWriter writer = new(stream, Encoding.ASCII))
+                using (MzidmlWriter writer = new(stream, Encoding.ASCII, metadata))
                 {
                     writer.WriteStartDoc();
                     writer.WriteMzIDStartElement(inputFileInfo.Name);
                     writer.WriteMzIDCVList();
-                    writer.WriteAnalysisSoftwareList();
+                    writer.WriteAnalysisSoftwareList(_db);
                     writer.WriteProviderAndAuditCollection();
                     writer.WriteSequenceCollection(_db, FDR, dataset.Key);
                     writer.WriteAnalysisCollection(_db, FDR, dataset.Key);
@@ -88,7 +105,6 @@ namespace NRTDP.tdReportConverter
                 count++;
                 Console.WriteLine(count / datasets.Count());
             }
-            _db.Dispose();
         }
         /// <summary>
         /// 
@@ -96,24 +112,23 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output file for the mzidml file (include the .mzidml)</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSingleMzId(string TDReport, string outputPath, double FDR = 0.05)
+        public static void ConvertToSingleMzId(string TDReport, string outputPath, double FDR = 0.05, MzidMetadata? metadata = null)
         {
             var inputFileInfo = new FileInfo(TDReport);
-            var _db = TDReportVersionCheck(inputFileInfo.FullName);
+            using var _db = TDReportVersionCheck(inputFileInfo.FullName);
 
             using (FileStream stream = File.Create(outputPath))
-            using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII))
+            using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII, metadata))
             {
                 writer.WriteStartDoc();
                 writer.WriteMzIDStartElement(inputFileInfo.Name);
                 writer.WriteMzIDCVList();
-                writer.WriteAnalysisSoftwareList();
+                writer.WriteAnalysisSoftwareList(_db);
                 writer.WriteProviderAndAuditCollection();
                 writer.WriteSequenceCollection(_db, FDR);
                 writer.WriteAnalysisCollection(_db, FDR);
                 writer.WriteDataCollection(_db, inputFileInfo, FDR);
             }
-            _db.Dispose();
         }
 
         /// <summary>
@@ -122,11 +137,11 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output folder for the compressed mzidml files</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSeperateMzId(string TDReport, string outputFolder, double FDR = 0.05, IProgress<double>? progress = null)
+        public static void ConvertToSeperateMzId(string TDReport, string outputFolder, double FDR = 0.05, IProgress<double>? progress = null, MzidMetadata? metadata = null)
         {
             var inputFileInfo = new FileInfo(TDReport);
 
-            var _db = TDReportVersionCheck(inputFileInfo.FullName);
+            using var _db = TDReportVersionCheck(inputFileInfo.FullName);
 
             var datasets = _db.GetDataFiles();
             int count = 0;
@@ -137,12 +152,12 @@ namespace NRTDP.tdReportConverter
                 var outputPath = Path.Join(outputFolder, $"{Path.GetFileNameWithoutExtension(rawFileName)}.mzid");
 
                 using (FileStream stream = File.Create(outputPath))
-                using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII))
+                using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII, metadata))
                 {
                     writer.WriteStartDoc();
                     writer.WriteMzIDStartElement(inputFileInfo.Name);
                     writer.WriteMzIDCVList();
-                    writer.WriteAnalysisSoftwareList();
+                    writer.WriteAnalysisSoftwareList(_db);
                     writer.WriteProviderAndAuditCollection();
                     writer.WriteSequenceCollection(_db, FDR, dataset.Key);
                     writer.WriteAnalysisCollection(_db, FDR, dataset.Key);
@@ -150,7 +165,21 @@ namespace NRTDP.tdReportConverter
                 }
                 progress?.Report((double)++count / datasets.Count);
             }
-            _db.Dispose();
+        }
+
+        // Spectra source-file format CV terms; default to Thermo, overridable via JSON metadata.
+        private void WriteSpectraFileFormat()
+        {
+            var spectra = _metadata.SpectraData;
+            this.WriteStartElement("FileFormat");
+            this.WriteCVParam(spectra?.FileFormatAccession ?? DefaultRawFormatAccession,
+                              spectra?.FileFormatName ?? DefaultRawFormatName);
+            this.WriteEndElement();
+
+            this.WriteStartElement("SpectrumIDFormat");
+            this.WriteCVParam(spectra?.IdFormatAccession ?? DefaultIdFormatAccession,
+                              spectra?.IdFormatName ?? DefaultIdFormatName);
+            this.WriteEndElement();
         }
 
         private void WriteDataCollection(IOpenTDReport db, FileInfo inputFileInfo, double FDR, int? dataSetId = null)
@@ -162,13 +191,20 @@ namespace NRTDP.tdReportConverter
             this.WriteAttributeString("id", "SF_1"); // TODO: optional Add FileFormat - needs CVparam for TDReport File
             this.WriteEndElement();
 
-            this.WriteStartElement("SearchDatabase"); //Fake IT!
-            this.WriteAttributeString("location", "C:/123FakeSt");
+            var searchDb = _metadata.SearchDatabase;
+            this.WriteStartElement("SearchDatabase");
+            this.WriteAttributeString("location", searchDb?.Location ?? DefaultDbLocation);
             this.WriteAttributeString("id", "db1");
+            if (!string.IsNullOrEmpty(searchDb?.Version))
+                this.WriteAttributeString("version", searchDb.Version);
+            if (searchDb?.NumDatabaseSequences is long numDbSeq)
+                this.WriteAttributeString("numDatabaseSequences", $"{numDbSeq}");
             this.WriteStartElement("DatabaseName");
-            this.WriteUserParam("Database1");
-            this.WriteEndElement();
-            this.WriteEndElement();
+            this.WriteUserParam(searchDb?.Name ?? DefaultDbName);
+            this.WriteEndElement(); //end DatabaseName
+            if (!string.IsNullOrEmpty(searchDb?.Taxonomy))
+                this.WriteUserParam("taxonomy", searchDb.Taxonomy);
+            this.WriteEndElement(); //end SearchDatabase
 
             //SpectraDAta
             var dataFiles = db.GetDataFiles();
@@ -178,14 +214,7 @@ namespace NRTDP.tdReportConverter
                 this.WriteAttributeString("location", dataFiles[dataSetId.Value].Item2);
                 this.WriteAttributeString("id", $"SD_{dataSetId.Value}");
                 this.WriteAttributeString("name", $"SD_{dataFiles[dataSetId.Value].Item1}");
-                this.WriteStartElement("FileFormat");
-                this.WriteCVParam("MS:1000563", "Thermo RAW format");
-                this.WriteEndElement();
-
-                this.WriteStartElement("SpectrumIDFormat");
-                this.WriteCVParam("MS:1000768", "Thermo nativeID format");
-                this.WriteEndElement();
-
+                this.WriteSpectraFileFormat();
                 this.WriteEndElement();
             }
             else
@@ -196,14 +225,7 @@ namespace NRTDP.tdReportConverter
                     this.WriteAttributeString("location", file.Value.Item2);
                     this.WriteAttributeString("id", $"SD_{file.Key}");
                     this.WriteAttributeString("name", $"SD_{file.Value.Item1}");
-                    this.WriteStartElement("FileFormat");
-                    this.WriteCVParam("MS:1000563", "Thermo RAW format");
-                    this.WriteEndElement();
-
-                    this.WriteStartElement("SpectrumIDFormat");
-                    this.WriteCVParam("MS:1000768", "Thermo nativeID format");
-                    this.WriteEndElement();
-
+                    this.WriteSpectraFileFormat();
                     this.WriteEndElement();
                 }
             }
@@ -224,6 +246,8 @@ namespace NRTDP.tdReportConverter
             if (dataSetId.HasValue)
             {
                 this.WriteStartElement("AnalysisData");
+                // hitId -> scans: a hit can match multiple scans, so SII ids and their refs include the scan.
+                var hitScans = new Dictionary<int, List<int>>();
                 foreach (var resultSet in resultSets)
                 {
                     //Write  SpectrumIdentificationList
@@ -234,12 +258,12 @@ namespace NRTDP.tdReportConverter
                     //Fragmentation Table
                     this.WriteStartElement("FragmentationTable");
                     this.WriteStartElement("Measure");
-                    this.WriteAttributeString("id", "m_mz");
+                    this.WriteAttributeString("id", $"m_mz_{resultSet.Key}");
                     this.WriteCVParam("MS:1001225", "product ion m/z");
                     this.WriteEndElement();
 
-                    this.WriteStartElement("m_error");
-                    this.WriteAttributeString("id", "m_error");
+                    this.WriteStartElement("Measure");
+                    this.WriteAttributeString("id", $"m_error_{resultSet.Key}");
                     this.WriteCVParam("MS:1001227", "product ion m/z error", unitRef: "PSI-MS", unitAccession: "MS:1000040", unitName: "m/z");
                     this.WriteEndElement();
                     this.WriteEndElement();
@@ -257,8 +281,11 @@ namespace NRTDP.tdReportConverter
                         foreach (var hit in hits[scan.Key])
                         {
 
+                            if (!hitScans.ContainsKey(hit.Key)) hitScans[hit.Key] = new List<int>();
+                            hitScans[hit.Key].Add(scan.Key);
+
                             this.WriteStartElement("SpectrumIdentificationItem");
-                            this.WriteAttributeString("id", $"SII_Hit_{hit.Key}_{resultSet.Key}_{dataSetId.Value}");
+                            this.WriteAttributeString("id", $"SII_Hit_{hit.Key}_{scan.Key}_{resultSet.Key}_{dataSetId.Value}");
                             this.WriteAttributeString("calculatedMassToCharge", String.Format("{0:f5}", hit.Value.TheoPreMass + 1.00728));
                             this.WriteAttributeString("chargeState", $"1");
                             this.WriteAttributeString("experimentalMassToCharge", String.Format("{0:f5}", hit.Value.ObsPreMass + 1.00728));
@@ -290,17 +317,17 @@ namespace NRTDP.tdReportConverter
                                     this.WriteStartElement("IonType");
                                     this.WriteAttributeString("index", string.Join(" ", fragArray.Select(x => x.IonNumber).ToArray()));
                                     this.WriteAttributeString("charge", $"{charge.Key}");
-                                    this.WriteFragType(type.Key);
                                     this.WriteStartElement("FragmentArray");
                                     this.WriteAttributeString("values", string.Join(" ", fragArray.Select(x => x.ObservedMz.ToString("f4")).ToArray()));
-                                    this.WriteAttributeString("measure_ref", "m_mz");
+                                    this.WriteAttributeString("measure_ref", $"m_mz_{resultSet.Key}");
                                     this.WriteEndElement();
 
                                     this.WriteStartElement("FragmentArray");
                                     this.WriteAttributeString("values", string.Join(" ", fragArray.Select(x => (x.ObservedMz - x.TheoreticalMz).ToString("e4")).ToArray()));
-                                    this.WriteAttributeString("measure_ref", "m_error");
+                                    this.WriteAttributeString("measure_ref", $"m_error_{resultSet.Key}");
                                     this.WriteEndElement();
 
+                                    this.WriteFragType(type.Key); // IonType: FragmentArray* then cvParam
                                     this.WriteEndElement();
                                 }
                             }
@@ -326,19 +353,17 @@ namespace NRTDP.tdReportConverter
                     this.WriteEndElement(); //end  SpectrumIdentificationList
                 }
 
+                // Single ProteinDetectionList spanning all result sets (schema allows only one).
+                this.WriteStartElement("ProteinDetectionList");
+                this.WriteAttributeString("id", "PDL_1");
                 foreach (var resultSet in resultSets)
                 {
-                    //Write  SpectrumIdentificationList
-                    this.WriteStartElement("ProteinDetectionList");
-                    this.WriteAttributeString("id", $"PDL_{resultSet.Key}");
-                    this.WriteAttributeString("name", $"{resultSet.Value}");
-
                     var isoforms = db.GetproteinDetectiondata(resultSet.Key, dataSetId.Value, FDR);
                     foreach (var isoform in isoforms)
                     {
                         //start ProteinAmbiguityGroup
                         this.WriteStartElement("ProteinAmbiguityGroup");
-                        this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSet.Key}_{dataSetId.Value}"); // set to isform maybe entry!?
+                        this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSet.Key}_{dataSetId.Value}");
                         this.WriteStartElement("ProteinDetectionHypothesis");
                         this.WriteAttributeString("id", $"PDH_{isoform.Key}_{resultSet.Key}_{dataSetId.Value}");
                         this.WriteAttributeString("dBSequence_ref", $"ISO_{isoform.Key}");
@@ -350,9 +375,13 @@ namespace NRTDP.tdReportConverter
                             this.WriteAttributeString("peptideEvidence_ref", $"PE_Chem_{chem.Key}_ISO_{isoform.Key}");
                             foreach (var hit in chem.Value.HitId)
                             {
-                                this.WriteStartElement("SpectrumIdentificationItemRef");
-                                this.WriteAttributeString("spectrumIdentificationItem_ref", $"SII_Hit_{hit}_{resultSet.Key}_{dataSetId.Value}");
-                                this.WriteEndElement();
+                                if (!hitScans.TryGetValue(hit, out var scansForHit)) continue;
+                                foreach (var scanNo in scansForHit)
+                                {
+                                    this.WriteStartElement("SpectrumIdentificationItemRef");
+                                    this.WriteAttributeString("spectrumIdentificationItem_ref", $"SII_Hit_{hit}_{scanNo}_{resultSet.Key}_{dataSetId.Value}");
+                                    this.WriteEndElement();
+                                }
                             }
 
                             this.WriteEndElement();
@@ -364,15 +393,16 @@ namespace NRTDP.tdReportConverter
                         this.WriteEndElement();
                         this.WriteEndElement();
                     }
-
-                    this.WriteEndElement();
                 }
+                this.WriteEndElement(); // end ProteinDetectionList
 
                 this.WriteEndElement();
             }
             else
             {
                 this.WriteStartElement("AnalysisData");
+                // hitId -> scans: a hit can match multiple scans, so SII ids and their refs include the scan.
+                var hitScans = new Dictionary<int, List<int>>();
                 foreach (var resultSet in resultSets)
                 {
                     //Write  SpectrumIdentificationList
@@ -383,12 +413,12 @@ namespace NRTDP.tdReportConverter
                     //Fragmentation Table
                     this.WriteStartElement("FragmentationTable");
                     this.WriteStartElement("Measure");
-                    this.WriteAttributeString("id", "m_mz");
+                    this.WriteAttributeString("id", $"m_mz_{resultSet.Key}");
                     this.WriteCVParam("MS:1001225", "product ion m/z");
                     this.WriteEndElement();
 
-                    this.WriteStartElement("m_error");
-                    this.WriteAttributeString("id", "m_error");
+                    this.WriteStartElement("Measure");
+                    this.WriteAttributeString("id", $"m_error_{resultSet.Key}");
                     this.WriteCVParam("MS:1001227", "product ion m/z error", unitRef: "PSI-MS", unitAccession: "MS:1000040", unitName: "m/z");
                     this.WriteEndElement();
                     this.WriteEndElement();
@@ -409,8 +439,11 @@ namespace NRTDP.tdReportConverter
                             foreach (var hit in hits[scan.Key])
                             {
 
+                                if (!hitScans.ContainsKey(hit.Key)) hitScans[hit.Key] = new List<int>();
+                                hitScans[hit.Key].Add(scan.Key);
+
                                 this.WriteStartElement("SpectrumIdentificationItem");
-                                this.WriteAttributeString("id", $"SII_Hit_{hit.Key}_{resultSet.Key}_{rawfile.Key}");
+                                this.WriteAttributeString("id", $"SII_Hit_{hit.Key}_{scan.Key}_{resultSet.Key}_{rawfile.Key}");
                                 this.WriteAttributeString("calculatedMassToCharge", String.Format("{0:f5}", hit.Value.TheoPreMass + 1.00728));
                                 this.WriteAttributeString("chargeState", $"1");
                                 this.WriteAttributeString("experimentalMassToCharge", String.Format("{0:f5}", hit.Value.ObsPreMass + 1.00728));
@@ -443,17 +476,17 @@ namespace NRTDP.tdReportConverter
                                         this.WriteStartElement("IonType");
                                         this.WriteAttributeString("index", string.Join(" ", fragArray.Select(x => x.IonNumber).ToArray()));
                                         this.WriteAttributeString("charge", $"{charge.Key}");
-                                        this.WriteFragType(type.Key);
                                         this.WriteStartElement("FragmentArray");
                                         this.WriteAttributeString("values", string.Join(" ", fragArray.Select(x => x.ObservedMz.ToString("f4")).ToArray()));
-                                        this.WriteAttributeString("measure_ref", "m_mz");
+                                        this.WriteAttributeString("measure_ref", $"m_mz_{resultSet.Key}");
                                         this.WriteEndElement();
 
                                         this.WriteStartElement("FragmentArray");
                                         this.WriteAttributeString("values", string.Join(" ", fragArray.Select(x => (x.ObservedMz - x.TheoreticalMz).ToString("e4")).ToArray()));
-                                        this.WriteAttributeString("measure_ref", "m_error");
+                                        this.WriteAttributeString("measure_ref", $"m_error_{resultSet.Key}");
                                         this.WriteEndElement();
 
+                                        this.WriteFragType(type.Key); // IonType: FragmentArray* then cvParam
                                         this.WriteEndElement();
                                     }
                                 }
@@ -483,23 +516,19 @@ namespace NRTDP.tdReportConverter
                     this.WriteEndElement(); //end  SpectrumIdentificationList
                 }
 
+                // Single ProteinDetectionList spanning all result sets (schema allows only one).
+                this.WriteStartElement("ProteinDetectionList");
+                this.WriteAttributeString("id", "PDL_1");
                 foreach (var resultSet in resultSets)
                 {
-                    //Write  SpectrumIdentificationList
-                    this.WriteStartElement("ProteinDetectionList");
-                    this.WriteAttributeString("id", $"PDL_{resultSet.Key}");
-                    this.WriteAttributeString("name", $"{resultSet.Value}");
-
-
                     foreach (var rawfile in rawFiles)
                     {
-
                         var isoforms = db.GetproteinDetectiondata(resultSet.Key, rawfile.Key, FDR);
                         foreach (var isoform in isoforms)
                         {
                             //start ProteinAmbiguityGroup
                             this.WriteStartElement("ProteinAmbiguityGroup");
-                            this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSet.Key}_{rawfile.Key}"); // set to isform maybe entry!?
+                            this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSet.Key}_{rawfile.Key}");
                             this.WriteStartElement("ProteinDetectionHypothesis");
                             this.WriteAttributeString("id", $"PDH_{isoform.Key}_{resultSet.Key}_{rawfile.Key}");
                             this.WriteAttributeString("dBSequence_ref", $"ISO_{isoform.Key}");
@@ -512,25 +541,28 @@ namespace NRTDP.tdReportConverter
                                 this.WriteAttributeString("peptideEvidence_ref", $"PE_Chem_{chem.Key}_ISO_{isoform.Key}");
                                 foreach (var hit in chem.Value.HitId)
                                 {
-                                    this.WriteStartElement("SpectrumIdentificationItemRef");
-                                    this.WriteAttributeString("spectrumIdentificationItem_ref", $"SII_Hit_{hit}_{resultSet.Key}_{rawfile.Key}");
-                                    this.WriteEndElement();
+                                    if (!hitScans.TryGetValue(hit, out var scansForHit)) continue;
+                                    foreach (var scanNo in scansForHit)
+                                    {
+                                        this.WriteStartElement("SpectrumIdentificationItemRef");
+                                        this.WriteAttributeString("spectrumIdentificationItem_ref", $"SII_Hit_{hit}_{scanNo}_{resultSet.Key}_{rawfile.Key}");
+                                        this.WriteEndElement();
+                                    }
                                 }
 
                                 this.WriteEndElement();
 
                             }
-                   
+
                             this.WriteCVParam("MS:1003134", "ProSight:isoform Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.IsoformGlobalQvalue));
-                            this.WriteCVParam("MS: 1003135", "ProSight:protein Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.EntryGlobalQValue));
+                            this.WriteCVParam("MS:1003135", "ProSight:protein Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.EntryGlobalQValue));
 
                             this.WriteEndElement();
                             this.WriteEndElement();
                         }
                     }
-
-                    this.WriteEndElement();
                 }
+                this.WriteEndElement(); // end ProteinDetectionList
 
                 this.WriteEndElement();
             }
@@ -647,39 +679,36 @@ namespace NRTDP.tdReportConverter
 
         private void WriteMzIDStartElement(string name)
         {
-            this.WriteStartElement("MzIdentML", "http://psi.hupo.org/ms/mzml");
+            this.WriteStartElement("MzIdentML", "http://psidev.info/psi/pi/mzIdentML/1.1");
             this.WriteAttributeString("id", name);
             this.WriteAttributeString("version", "1.1.0");
             this.WriteAttributeString("xsi", "schemaLocation", "http://www.w3.org/2001/XMLSchema-instance", "http://psidev.info/psi/pi/mzIdentML/1.1 ../../schema/mzIdentML1.1.0.xsd");
-            this.WriteAttributeString("creationDate", $"{DateTime.Now}");
+            this.WriteAttributeString("creationDate", DateTime.Now.ToString("s")); // ISO-8601 xs:dateTime
         }
 
-        private void WriteAnalysisSoftwareList()
+        private void WriteAnalysisSoftwareList(IOpenTDReport db)
         {
-            this.WriteStartElement("AnalysisSoftwareList");
-            //toDo differentiate from TDPortal and PC
-            this.WriteStartElement("AnalysisSoftware");
-            this.WriteAttributeString("id", "AS_TDPortal");
-            this.WriteAttributeString("name", "TDPortal");
-            this.WriteAttributeString("version", "4.0.0");
-            this.WriteAttributeString("uri", "http://www.kelleher.northwestern.edu/");
+            bool isProSightPD = db.IsProSightPD;
+            var software = _metadata.Software;
+            string name = software?.Name ?? (isProSightPD ? "ProSight PD" : "TDPortal");
+            string? version = software?.Version ?? db.SoftwareVersion;   // PD omits unless the JSON supplies it
+            string uri = software?.Uri ?? DefaultSoftwareUri;
 
-            this.WriteStartElement("ContactRole");
-            this.WriteAttributeString("contact_ref", "ORG_NU");
-            this.WriteStartElement("Role");
-            this.WriteCVParam("MS:1001267", "software vendor");
-            this.WriteEndElement(); //end Role
-            this.WriteEndElement(); //end contact role
+            this.WriteStartElement("AnalysisSoftwareList");
+            this.WriteStartElement("AnalysisSoftware");
+            this.WriteAttributeString("id", AnalysisSoftwareId(db));
+            this.WriteAttributeString("name", name);
+            if (!string.IsNullOrEmpty(version))
+                this.WriteAttributeString("version", version);
+            this.WriteAttributeString("uri", uri);
 
             this.WriteStartElement("SoftwareName");
-
-            this.WriteCVParam("MS:1003142", "TDPortal");
-            //this.WriteCVParam("MS:1003141", "ProSight"); //get Accession#
-
+            // CV term identifies the software family from provenance, even if name is overridden.
+            if (isProSightPD)
+                this.WriteCVParam("MS:1003141", "ProSight");
+            else
+                this.WriteCVParam("MS:1003142", "TDPortal");
             this.WriteEndElement(); //end SoftwareName
-
-            //TODO: Add Customizations? its optional Free text 
-            //_writer.WriteString(Customizations);
 
             this.WriteEndElement(); //end AnalysisSoftware
             this.WriteEndElement(); //end AnalysisSoftwareList
@@ -726,20 +755,18 @@ namespace NRTDP.tdReportConverter
                 this.WriteEndElement();
             }
 
+            // Single ProteinDetection (schema allows one); reference every result set's SIL.
+            this.WriteStartElement("ProteinDetection");
+            this.WriteAttributeString("id", "PD_1");
+            this.WriteAttributeString("proteinDetectionProtocol_ref", "PDP_1");
+            this.WriteAttributeString("proteinDetectionList_ref", "PDL_1");
             foreach (var ResultSet in resultSets)
             {
-                this.WriteStartElement("ProteinDetection");
-                this.WriteAttributeString("id", $"PD_{ResultSet.Key}");
-                this.WriteAttributeString("proteinDetectionProtocol_ref", $"PDP_{ResultSet.Key}");
-                this.WriteAttributeString("proteinDetectionList_ref", $"PDL_{ResultSet.Key}");
-                //this.WriteAttributeString("activityDate", $"{DateTime.Now}");
-
                 this.WriteStartElement("InputSpectrumIdentifications");
                 this.WriteAttributeString("spectrumIdentificationList_ref", $"SIL_{ResultSet.Key}");
                 this.WriteEndElement();
-
-                this.WriteEndElement();
             }
+            this.WriteEndElement();
 
             this.WriteEndElement();
 
@@ -753,15 +780,17 @@ namespace NRTDP.tdReportConverter
                 this.WriteStartElement("SpectrumIdentificationProtocol");
                 this.WriteAttributeString("id", $"SIP_{ResultSet.Key}");
                 this.WriteAttributeString("name", $"{ResultSet.Value}");
-                this.WriteAttributeString("analysisSoftware_ref", "AS_TDPortal");
+                this.WriteAttributeString("analysisSoftware_ref", AnalysisSoftwareId(db));
                 this.WriteStartElement("SearchType");
 
                 this.WriteCVParam("MS:1001083", "ms-ms search");
 
                 this.WriteEndElement();
 
-                this.WriteStartElement("AdditionalSearchParams"); //What to put here!? do UserPArams for now
+                this.WriteStartElement("AdditionalSearchParams");
                 var ResultSetParameters = db.GetResultSetParameters(ResultSet.Key);
+                // AdditionalSearchParams must be non-empty; ProSight PD has no params, so always emit this.
+                this.WriteUserParam("search mode", ResultSet.Value);
 
                 // to do - CV params for - Annotated Proteoform Search mode, Subsequence Search mode,Run delta m mode
                 if (ResultSet.Value == "BioMarker")
@@ -805,7 +834,7 @@ namespace NRTDP.tdReportConverter
                 this.WriteEndElement();
 
                 this.WriteStartElement("MassTable");
-                this.WriteAttributeString("id", $"MT");
+                this.WriteAttributeString("id", $"MT_{ResultSet.Key}");
                 this.WriteAttributeString("msLevel", "1 2");
                 foreach (var aa in massTable)
                 {
@@ -820,23 +849,32 @@ namespace NRTDP.tdReportConverter
 
                 this.WriteStartElement("FragmentTolerance");
 
-                if (ResultSetParameters["fragment_tolerance"].TrimEnd(null).EndsWith("ppm"))
+                // ProSight PD has no fragment_tolerance (empty ResultParameter); guard + emit -1 like the precursor block below.
+                if (ResultSetParameters.ContainsKey("fragment_tolerance"))
                 {
-                    var tol = Double.Parse(ResultSetParameters["fragment_tolerance"].Remove(ResultSetParameters["fragment_tolerance"].IndexOf('p'), 3));
-                    this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
-                    this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
+                    if (ResultSetParameters["fragment_tolerance"].TrimEnd(null).EndsWith("ppm"))
+                    {
+                        var tol = Double.Parse(ResultSetParameters["fragment_tolerance"].Remove(ResultSetParameters["fragment_tolerance"].IndexOf('p'), 3));
+                        this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
+                        this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
+                    }
+                    else if (ResultSetParameters["fragment_tolerance"].TrimEnd(null).EndsWith("Da"))
+                    {
+                        var tol = Double.Parse(ResultSetParameters["fragment_tolerance"].Remove(ResultSetParameters["fragment_tolerance"].LastIndexOf('D'), 2));
+                        this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000221", "dalton");
+                        this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000221", "dalton");
+                    }
                 }
-                else if (ResultSetParameters["fragment_tolerance"].TrimEnd(null).EndsWith("Da"))
+                else
                 {
-                    var tol = Double.Parse(ResultSetParameters["fragment_tolerance"].Remove(ResultSetParameters["fragment_tolerance"].LastIndexOf('D'), 2));
-                    this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000221", "dalton");
-                    this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000221", "dalton");
+                    this.WriteCVParam("MS:1001412", "search tolerance plus value", $"-1", "UO", "UO:0000221", "dalton");
+                    this.WriteCVParam("MS:1001413", "search tolerance minus value", $"-1", "UO", "UO:0000221", "dalton");
                 }
 
                 this.WriteEndElement();
 
 
-                this.WriteStartElement("precursor_window_tolerance");
+                this.WriteStartElement("ParentTolerance");
                 if (ResultSetParameters.ContainsKey("precursor_window_tolerance"))
                 {
                     if (ResultSetParameters["precursor_window_tolerance"].TrimEnd(null).EndsWith("ppm"))
@@ -870,41 +908,40 @@ namespace NRTDP.tdReportConverter
                 this.WriteEndElement();
             }
 
-            //ForEach PDP
-            foreach (var ResultSet in resultSets)
+            // Single ProteinDetectionProtocol (schema allows one); its params are document-level.
+            this.WriteStartElement("ProteinDetectionProtocol");
+            this.WriteAttributeString("id", "PDP_1");
+            this.WriteAttributeString("analysisSoftware_ref", AnalysisSoftwareId(db));
+            this.WriteStartElement("AnalysisParams");
+
+            bool wroteAnalysisParam = false;
+            if (parameters.ContainsKey("Generate Report"))
             {
-                this.WriteStartElement("ProteinDetectionProtocol");
-                this.WriteAttributeString("id", $"PDP_{ResultSet.Key}");
-
-                this.WriteAttributeString("analysisSoftware_ref", "AS_TDPortal");
-                this.WriteStartElement("AnalysisParams");
-
-                //protein determination parameters and report generation?
-
-                if (parameters.ContainsKey("Generate Report"))
+                foreach (var par in parameters["Generate Report"])
                 {
-                    foreach (var par in parameters["Generate Report"])
-                    {
-                        this.WriteUserParam($"Generate Report - {par.Key}", par.Value);
-                    }
+                    this.WriteUserParam($"Generate Report - {par.Key}", par.Value);
+                    wroteAnalysisParam = true;
                 }
-
-                if (parameters.ContainsKey("Generate SAS Input"))
-                {
-                    foreach (var par in parameters["Generate SAS Input"])
-                    {
-                        this.WriteUserParam($"Generate SAS Input - {par.Key}", par.Value);
-
-                    }
-                }
-
-                this.WriteEndElement();
-                this.WriteStartElement("Threshold");
-                this.WriteCVParam("MS:1001447", "prot:FDR threshold", $"{FDR}"); //do we need a proteoform level FDR CV?
-                this.WriteEndElement();
-                this.WriteEndElement();
-
             }
+
+            if (parameters.ContainsKey("Generate SAS Input"))
+            {
+                foreach (var par in parameters["Generate SAS Input"])
+                {
+                    this.WriteUserParam($"Generate SAS Input - {par.Key}", par.Value);
+                    wroteAnalysisParam = true;
+                }
+            }
+
+            // AnalysisParams requires >=1 child; ProSight PD reports carry no such parameters.
+            if (!wroteAnalysisParam)
+                this.WriteUserParam("protein detection parameters", "none");
+
+            this.WriteEndElement();
+            this.WriteStartElement("Threshold");
+            this.WriteCVParam("MS:1001447", "prot:FDR threshold", $"{FDR}");
+            this.WriteEndElement();
+            this.WriteEndElement();
 
             this.WriteEndElement();
         }
@@ -963,7 +1000,9 @@ namespace NRTDP.tdReportConverter
                         this.WriteAttributeString("location", $"{pepmod.StartIndex + 1}");
                         this.WriteAttributeString("monoisotopicMassDelta", $"{pepmod.DiffMono}");
                         this.WriteAttributeString("avgMassDelta", $"{pepmod.DiffAverage}");
-                        this.WriteAttributeString("residues", $"{pepmod.AminoAcid}");
+                        // Omit the optional residues attr when absent (ProSight PD terminal mods) rather than emit residues="".
+                        if (!string.IsNullOrEmpty(pepmod.AminoAcid))
+                            this.WriteAttributeString("residues", pepmod.AminoAcid);
                         this.WriteCVParam($"{pepmod.ModSetId}:{pepmod.ModId}", pepmod.ModName, cvRef: pepmod.ModSetId);
                         this.WriteEndElement();
                     }
@@ -998,7 +1037,9 @@ namespace NRTDP.tdReportConverter
                 this.WriteAttributeString("post", $"{post}");
                 this.WriteAttributeString("isDecoy", $"false");
 
-                this.WriteCVParam("MS:1003130", "ProSight:proteoform Q-value", String.Format("{0:e4}", bioPForm.ProteoformQValue));
+                // Only TDPortal bPFRs carry a proteoform-level (agg=1) Q-value; omit for cPFR-only ProSight PD.
+                if (bioPForm.ProteoformQValue.HasValue)
+                    this.WriteCVParam("MS:1003130", "ProSight:proteoform Q-value", String.Format("{0:e4}", bioPForm.ProteoformQValue.Value));
                 this.WriteEndElement();
             }
 
@@ -1027,7 +1068,14 @@ namespace NRTDP.tdReportConverter
 
         private void WriteProviderAndAuditCollection()
         {
-            //provider section
+            var submitter = _metadata.Submitter;
+            string firstName = submitter?.FirstName ?? DefaultFirstName;
+            string lastName = submitter?.LastName ?? DefaultLastName;
+            string organization = submitter?.Organization ?? DefaultOrganization;
+            string? email = submitter?.Email;
+            string? organizationUri = submitter?.OrganizationUri;
+
+            //provider section - who produced the document
             this.WriteStartElement("Provider");
             this.WriteAttributeString("id", "PROVIDER");
 
@@ -1039,40 +1087,31 @@ namespace NRTDP.tdReportConverter
             this.WriteEndElement(); //end contact role
             this.WriteEndElement(); //end Provider
 
-            //Audit Collection - Could take user name - stick with Neil for now
+            //Audit Collection - the submitter and their organization (override via JSON metadata)
             this.WriteStartElement("AuditCollection");
             this.WriteStartElement("Person");
-            this.WriteAttributeString("id", "");
-            this.WriteStartElement("Affiliation");
-            this.WriteAttributeString("organization_ref", "ORG_NU");
-            this.WriteEndElement(); //end 
-            this.WriteEndElement(); //end person
-
-            this.WriteStartElement("Person");
             this.WriteAttributeString("id", "PERSON_DOC_OWNER");
-            this.WriteAttributeString("firstName", "Neil");
-            this.WriteAttributeString("lastName", "Kelleher");
+            this.WriteAttributeString("firstName", firstName);
+            this.WriteAttributeString("lastName", lastName);
+            if (!string.IsNullOrEmpty(email))
+                this.WriteCVParam("MS:1000589", "contact email", email);
             this.WriteStartElement("Affiliation");
             this.WriteAttributeString("organization_ref", "ORG_DOC_OWNER");
-            this.WriteEndElement();
+            this.WriteEndElement(); //end Affiliation
             this.WriteEndElement(); //end person
-
-            this.WriteStartElement("Organization");
-            this.WriteAttributeString("id", "ORG_NU");
-            this.WriteAttributeString("name", "NorthWestern University");
-            this.WriteEndElement(); //end Organization
 
             this.WriteStartElement("Organization");
             this.WriteAttributeString("id", "ORG_DOC_OWNER");
-
+            this.WriteAttributeString("name", organization);
+            if (!string.IsNullOrEmpty(organizationUri))
+                this.WriteCVParam("MS:1000588", "contact URL", organizationUri);
             this.WriteEndElement(); //end Organization
             this.WriteEndElement(); //end AuditCollection
         }
 
         private void WriteMzIDCVList()
         {
-            this.WriteStartElement("cvList");
-            this.WriteAttributeString("count", "3");
+            this.WriteStartElement("cvList"); // mzIdentML cvList has no 'count' attribute
 
             this.WriteStartElement("cv");
             this.WriteAttributeString("id", "PSI-MS");
@@ -1087,6 +1126,12 @@ namespace NRTDP.tdReportConverter
             this.WriteAttributeString("fullName", "UNIMOD");
             this.WriteAttributeString("version", "18:03:2011");
             this.WriteAttributeString("uri", "http://www.unimod.org/obo/unimod.obo");
+            this.WriteEndElement();
+
+            this.WriteStartElement("cv");
+            this.WriteAttributeString("id", "PSI-MOD");
+            this.WriteAttributeString("fullName", "Protein Modifications (PSI-MOD)");
+            this.WriteAttributeString("uri", "http://purl.obolibrary.org/obo/mod.obo");
             this.WriteEndElement();
 
             this.WriteStartElement("cv");
