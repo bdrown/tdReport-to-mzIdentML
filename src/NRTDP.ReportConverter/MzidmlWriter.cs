@@ -249,6 +249,8 @@ namespace NRTDP.tdReportConverter
             if (dataSetId.HasValue)
             {
                 this.WriteStartElement("AnalysisData");
+                // hitId -> scans: a hit can match multiple scans, so SII ids and their refs include the scan.
+                var hitScans = new Dictionary<int, List<int>>();
                 foreach (var resultSet in resultSets)
                 {
                     //Write  SpectrumIdentificationList
@@ -259,12 +261,12 @@ namespace NRTDP.tdReportConverter
                     //Fragmentation Table
                     this.WriteStartElement("FragmentationTable");
                     this.WriteStartElement("Measure");
-                    this.WriteAttributeString("id", "m_mz");
+                    this.WriteAttributeString("id", $"m_mz_{resultSet.Key}");
                     this.WriteCVParam("MS:1001225", "product ion m/z");
                     this.WriteEndElement();
 
-                    this.WriteStartElement("m_error");
-                    this.WriteAttributeString("id", "m_error");
+                    this.WriteStartElement("Measure");
+                    this.WriteAttributeString("id", $"m_error_{resultSet.Key}");
                     this.WriteCVParam("MS:1001227", "product ion m/z error", unitRef: "PSI-MS", unitAccession: "MS:1000040", unitName: "m/z");
                     this.WriteEndElement();
                     this.WriteEndElement();
@@ -282,8 +284,11 @@ namespace NRTDP.tdReportConverter
                         foreach (var hit in hits[scan.Key])
                         {
 
+                            if (!hitScans.ContainsKey(hit.Key)) hitScans[hit.Key] = new List<int>();
+                            hitScans[hit.Key].Add(scan.Key);
+
                             this.WriteStartElement("SpectrumIdentificationItem");
-                            this.WriteAttributeString("id", $"SII_Hit_{hit.Key}_{resultSet.Key}_{dataSetId.Value}");
+                            this.WriteAttributeString("id", $"SII_Hit_{hit.Key}_{scan.Key}_{resultSet.Key}_{dataSetId.Value}");
                             this.WriteAttributeString("calculatedMassToCharge", String.Format("{0:f5}", hit.Value.TheoPreMass + 1.00728));
                             this.WriteAttributeString("chargeState", $"1");
                             this.WriteAttributeString("experimentalMassToCharge", String.Format("{0:f5}", hit.Value.ObsPreMass + 1.00728));
@@ -315,17 +320,17 @@ namespace NRTDP.tdReportConverter
                                     this.WriteStartElement("IonType");
                                     this.WriteAttributeString("index", string.Join(" ", fragArray.Select(x => x.IonNumber).ToArray()));
                                     this.WriteAttributeString("charge", $"{charge.Key}");
-                                    this.WriteFragType(type.Key);
                                     this.WriteStartElement("FragmentArray");
                                     this.WriteAttributeString("values", string.Join(" ", fragArray.Select(x => x.ObservedMz.ToString("f4")).ToArray()));
-                                    this.WriteAttributeString("measure_ref", "m_mz");
+                                    this.WriteAttributeString("measure_ref", $"m_mz_{resultSet.Key}");
                                     this.WriteEndElement();
 
                                     this.WriteStartElement("FragmentArray");
                                     this.WriteAttributeString("values", string.Join(" ", fragArray.Select(x => (x.ObservedMz - x.TheoreticalMz).ToString("e4")).ToArray()));
-                                    this.WriteAttributeString("measure_ref", "m_error");
+                                    this.WriteAttributeString("measure_ref", $"m_error_{resultSet.Key}");
                                     this.WriteEndElement();
 
+                                    this.WriteFragType(type.Key); // IonType: FragmentArray* then cvParam
                                     this.WriteEndElement();
                                 }
                             }
@@ -351,19 +356,17 @@ namespace NRTDP.tdReportConverter
                     this.WriteEndElement(); //end  SpectrumIdentificationList
                 }
 
+                // Single ProteinDetectionList spanning all result sets (schema allows only one).
+                this.WriteStartElement("ProteinDetectionList");
+                this.WriteAttributeString("id", "PDL_1");
                 foreach (var resultSet in resultSets)
                 {
-                    //Write  SpectrumIdentificationList
-                    this.WriteStartElement("ProteinDetectionList");
-                    this.WriteAttributeString("id", $"PDL_{resultSet.Key}");
-                    this.WriteAttributeString("name", $"{resultSet.Value}");
-
                     var isoforms = db.GetproteinDetectiondata(resultSet.Key, dataSetId.Value, FDR);
                     foreach (var isoform in isoforms)
                     {
                         //start ProteinAmbiguityGroup
                         this.WriteStartElement("ProteinAmbiguityGroup");
-                        this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSet.Key}_{dataSetId.Value}"); // set to isform maybe entry!?
+                        this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSet.Key}_{dataSetId.Value}");
                         this.WriteStartElement("ProteinDetectionHypothesis");
                         this.WriteAttributeString("id", $"PDH_{isoform.Key}_{resultSet.Key}_{dataSetId.Value}");
                         this.WriteAttributeString("dBSequence_ref", $"ISO_{isoform.Key}");
@@ -375,9 +378,13 @@ namespace NRTDP.tdReportConverter
                             this.WriteAttributeString("peptideEvidence_ref", $"PE_Chem_{chem.Key}_ISO_{isoform.Key}");
                             foreach (var hit in chem.Value.HitId)
                             {
-                                this.WriteStartElement("SpectrumIdentificationItemRef");
-                                this.WriteAttributeString("spectrumIdentificationItem_ref", $"SII_Hit_{hit}_{resultSet.Key}_{dataSetId.Value}");
-                                this.WriteEndElement();
+                                if (!hitScans.TryGetValue(hit, out var scansForHit)) continue;
+                                foreach (var scanNo in scansForHit)
+                                {
+                                    this.WriteStartElement("SpectrumIdentificationItemRef");
+                                    this.WriteAttributeString("spectrumIdentificationItem_ref", $"SII_Hit_{hit}_{scanNo}_{resultSet.Key}_{dataSetId.Value}");
+                                    this.WriteEndElement();
+                                }
                             }
 
                             this.WriteEndElement();
@@ -389,9 +396,8 @@ namespace NRTDP.tdReportConverter
                         this.WriteEndElement();
                         this.WriteEndElement();
                     }
-
-                    this.WriteEndElement();
                 }
+                this.WriteEndElement(); // end ProteinDetectionList
 
                 this.WriteEndElement();
             }
@@ -408,12 +414,12 @@ namespace NRTDP.tdReportConverter
                     //Fragmentation Table
                     this.WriteStartElement("FragmentationTable");
                     this.WriteStartElement("Measure");
-                    this.WriteAttributeString("id", "m_mz");
+                    this.WriteAttributeString("id", $"m_mz_{resultSet.Key}");
                     this.WriteCVParam("MS:1001225", "product ion m/z");
                     this.WriteEndElement();
 
-                    this.WriteStartElement("m_error");
-                    this.WriteAttributeString("id", "m_error");
+                    this.WriteStartElement("Measure");
+                    this.WriteAttributeString("id", $"m_error_{resultSet.Key}");
                     this.WriteCVParam("MS:1001227", "product ion m/z error", unitRef: "PSI-MS", unitAccession: "MS:1000040", unitName: "m/z");
                     this.WriteEndElement();
                     this.WriteEndElement();
@@ -468,17 +474,17 @@ namespace NRTDP.tdReportConverter
                                         this.WriteStartElement("IonType");
                                         this.WriteAttributeString("index", string.Join(" ", fragArray.Select(x => x.IonNumber).ToArray()));
                                         this.WriteAttributeString("charge", $"{charge.Key}");
-                                        this.WriteFragType(type.Key);
                                         this.WriteStartElement("FragmentArray");
                                         this.WriteAttributeString("values", string.Join(" ", fragArray.Select(x => x.ObservedMz.ToString("f4")).ToArray()));
-                                        this.WriteAttributeString("measure_ref", "m_mz");
+                                        this.WriteAttributeString("measure_ref", $"m_mz_{resultSet.Key}");
                                         this.WriteEndElement();
 
                                         this.WriteStartElement("FragmentArray");
                                         this.WriteAttributeString("values", string.Join(" ", fragArray.Select(x => (x.ObservedMz - x.TheoreticalMz).ToString("e4")).ToArray()));
-                                        this.WriteAttributeString("measure_ref", "m_error");
+                                        this.WriteAttributeString("measure_ref", $"m_error_{resultSet.Key}");
                                         this.WriteEndElement();
 
+                                        this.WriteFragType(type.Key); // IonType: FragmentArray* then cvParam
                                         this.WriteEndElement();
                                     }
                                 }
@@ -547,7 +553,7 @@ namespace NRTDP.tdReportConverter
                             }
                    
                             this.WriteCVParam("MS:1003134", "ProSight:isoform Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.IsoformGlobalQvalue));
-                            this.WriteCVParam("MS: 1003135", "ProSight:protein Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.EntryGlobalQValue));
+                            this.WriteCVParam("MS:1003135", "ProSight:protein Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.EntryGlobalQValue));
 
                             this.WriteEndElement();
                             this.WriteEndElement();
@@ -672,11 +678,11 @@ namespace NRTDP.tdReportConverter
 
         private void WriteMzIDStartElement(string name)
         {
-            this.WriteStartElement("MzIdentML", "http://psi.hupo.org/ms/mzml");
+            this.WriteStartElement("MzIdentML", "http://psidev.info/psi/pi/mzIdentML/1.1");
             this.WriteAttributeString("id", name);
             this.WriteAttributeString("version", "1.1.0");
             this.WriteAttributeString("xsi", "schemaLocation", "http://www.w3.org/2001/XMLSchema-instance", "http://psidev.info/psi/pi/mzIdentML/1.1 ../../schema/mzIdentML1.1.0.xsd");
-            this.WriteAttributeString("creationDate", $"{DateTime.Now}");
+            this.WriteAttributeString("creationDate", DateTime.Now.ToString("s")); // ISO-8601 xs:dateTime
         }
 
         private void WriteAnalysisSoftwareList(IOpenTDReport db)
@@ -748,20 +754,18 @@ namespace NRTDP.tdReportConverter
                 this.WriteEndElement();
             }
 
+            // Single ProteinDetection (schema allows one); reference every result set's SIL.
+            this.WriteStartElement("ProteinDetection");
+            this.WriteAttributeString("id", "PD_1");
+            this.WriteAttributeString("proteinDetectionProtocol_ref", "PDP_1");
+            this.WriteAttributeString("proteinDetectionList_ref", "PDL_1");
             foreach (var ResultSet in resultSets)
             {
-                this.WriteStartElement("ProteinDetection");
-                this.WriteAttributeString("id", $"PD_{ResultSet.Key}");
-                this.WriteAttributeString("proteinDetectionProtocol_ref", $"PDP_{ResultSet.Key}");
-                this.WriteAttributeString("proteinDetectionList_ref", $"PDL_{ResultSet.Key}");
-                //this.WriteAttributeString("activityDate", $"{DateTime.Now}");
-
                 this.WriteStartElement("InputSpectrumIdentifications");
                 this.WriteAttributeString("spectrumIdentificationList_ref", $"SIL_{ResultSet.Key}");
                 this.WriteEndElement();
-
-                this.WriteEndElement();
             }
+            this.WriteEndElement();
 
             this.WriteEndElement();
 
@@ -782,8 +786,10 @@ namespace NRTDP.tdReportConverter
 
                 this.WriteEndElement();
 
-                this.WriteStartElement("AdditionalSearchParams"); //What to put here!? do UserPArams for now
+                this.WriteStartElement("AdditionalSearchParams");
                 var ResultSetParameters = db.GetResultSetParameters(ResultSet.Key);
+                // AdditionalSearchParams must be non-empty; ProSight PD has no params, so always emit this.
+                this.WriteUserParam("search mode", ResultSet.Value);
 
                 // to do - CV params for - Annotated Proteoform Search mode, Subsequence Search mode,Run delta m mode
                 if (ResultSet.Value == "BioMarker")
@@ -827,7 +833,7 @@ namespace NRTDP.tdReportConverter
                 this.WriteEndElement();
 
                 this.WriteStartElement("MassTable");
-                this.WriteAttributeString("id", $"MT");
+                this.WriteAttributeString("id", $"MT_{ResultSet.Key}");
                 this.WriteAttributeString("msLevel", "1 2");
                 foreach (var aa in massTable)
                 {
@@ -867,7 +873,7 @@ namespace NRTDP.tdReportConverter
                 this.WriteEndElement();
 
 
-                this.WriteStartElement("precursor_window_tolerance");
+                this.WriteStartElement("ParentTolerance");
                 if (ResultSetParameters.ContainsKey("precursor_window_tolerance"))
                 {
                     if (ResultSetParameters["precursor_window_tolerance"].TrimEnd(null).EndsWith("ppm"))
@@ -901,41 +907,40 @@ namespace NRTDP.tdReportConverter
                 this.WriteEndElement();
             }
 
-            //ForEach PDP
-            foreach (var ResultSet in resultSets)
+            // Single ProteinDetectionProtocol (schema allows one); its params are document-level.
+            this.WriteStartElement("ProteinDetectionProtocol");
+            this.WriteAttributeString("id", "PDP_1");
+            this.WriteAttributeString("analysisSoftware_ref", AnalysisSoftwareId(db));
+            this.WriteStartElement("AnalysisParams");
+
+            bool wroteAnalysisParam = false;
+            if (parameters.ContainsKey("Generate Report"))
             {
-                this.WriteStartElement("ProteinDetectionProtocol");
-                this.WriteAttributeString("id", $"PDP_{ResultSet.Key}");
-
-                this.WriteAttributeString("analysisSoftware_ref", AnalysisSoftwareId(db));
-                this.WriteStartElement("AnalysisParams");
-
-                //protein determination parameters and report generation?
-
-                if (parameters.ContainsKey("Generate Report"))
+                foreach (var par in parameters["Generate Report"])
                 {
-                    foreach (var par in parameters["Generate Report"])
-                    {
-                        this.WriteUserParam($"Generate Report - {par.Key}", par.Value);
-                    }
+                    this.WriteUserParam($"Generate Report - {par.Key}", par.Value);
+                    wroteAnalysisParam = true;
                 }
-
-                if (parameters.ContainsKey("Generate SAS Input"))
-                {
-                    foreach (var par in parameters["Generate SAS Input"])
-                    {
-                        this.WriteUserParam($"Generate SAS Input - {par.Key}", par.Value);
-
-                    }
-                }
-
-                this.WriteEndElement();
-                this.WriteStartElement("Threshold");
-                this.WriteCVParam("MS:1001447", "prot:FDR threshold", $"{FDR}"); //do we need a proteoform level FDR CV?
-                this.WriteEndElement();
-                this.WriteEndElement();
-
             }
+
+            if (parameters.ContainsKey("Generate SAS Input"))
+            {
+                foreach (var par in parameters["Generate SAS Input"])
+                {
+                    this.WriteUserParam($"Generate SAS Input - {par.Key}", par.Value);
+                    wroteAnalysisParam = true;
+                }
+            }
+
+            // AnalysisParams requires >=1 child; ProSight PD reports carry no such parameters.
+            if (!wroteAnalysisParam)
+                this.WriteUserParam("protein detection parameters", "none");
+
+            this.WriteEndElement();
+            this.WriteStartElement("Threshold");
+            this.WriteCVParam("MS:1001447", "prot:FDR threshold", $"{FDR}");
+            this.WriteEndElement();
+            this.WriteEndElement();
 
             this.WriteEndElement();
         }
@@ -1103,8 +1108,7 @@ namespace NRTDP.tdReportConverter
 
         private void WriteMzIDCVList()
         {
-            this.WriteStartElement("cvList");
-            this.WriteAttributeString("count", "3");
+            this.WriteStartElement("cvList"); // mzIdentML cvList has no 'count' attribute
 
             this.WriteStartElement("cv");
             this.WriteAttributeString("id", "PSI-MS");
@@ -1119,6 +1123,12 @@ namespace NRTDP.tdReportConverter
             this.WriteAttributeString("fullName", "UNIMOD");
             this.WriteAttributeString("version", "18:03:2011");
             this.WriteAttributeString("uri", "http://www.unimod.org/obo/unimod.obo");
+            this.WriteEndElement();
+
+            this.WriteStartElement("cv");
+            this.WriteAttributeString("id", "PSI-MOD");
+            this.WriteAttributeString("fullName", "Protein Modifications (PSI-MOD)");
+            this.WriteAttributeString("uri", "http://purl.obolibrary.org/obo/mod.obo");
             this.WriteEndElement();
 
             this.WriteStartElement("cv");
