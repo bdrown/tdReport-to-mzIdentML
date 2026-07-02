@@ -1,0 +1,55 @@
+name: Release executables
+
+# Build a self-contained, single-file console executable for each platform when a
+# GitHub release is published, and attach them to that release.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write   # required to upload assets to the release
+
+jobs:
+  build:
+    name: Publish ${{ matrix.rid }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+            ext: .exe
+          - rid: linux-x64
+            os: ubuntu-latest
+            ext: ''
+          - rid: osx-x64
+            os: macos-latest
+            ext: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish self-contained single file
+        run: >
+          dotnet publish src/NRTDP.ReportConverter.ConsoleApp/NRTDP.tdReportConverter.ConsoleApp.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:AssemblyName=tdReportConverter
+          -o publish
+
+      - name: Name the artifact
+        shell: bash
+        run: mv "publish/tdReportConverter${{ matrix.ext }}" "tdReportConverter-${{ matrix.rid }}${{ matrix.ext }}"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: tdReportConverter-${{ matrix.rid }}${{ matrix.ext }}
