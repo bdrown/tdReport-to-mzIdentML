@@ -255,9 +255,13 @@ namespace NRTDP.tdReportConverter
 
                                   join q1 in _db.GlobalQualitativeConfidence on new { ID = h.Id, agg = 0 } equals new { ID = q1.HitId, agg = q1.AggregationLevel }
                                   join q2 in _db.GlobalQualitativeConfidence on new { ID = bio.IsoformId, agg = 2 } equals new { ID = q2.ExternalId, agg = q2.AggregationLevel }
-                                  join q3 in _db.GlobalQualitativeConfidence on new { ID = bio.Id, agg = 1 } equals new { ID = q3.ExternalId, agg = q3.AggregationLevel }
+                                  // Left join: the agg=1 (biological-proteoform) confidence exists only for
+                                  // CPR-registered bPFRs (TDPortal). ProSight PD is cPFR-only, so emit the
+                                  // proteoform anyway (its Q-value is just absent) instead of dropping it.
+                                  join q3temp in _db.GlobalQualitativeConfidence on new { ID = bio.Id, agg = 1 } equals new { ID = q3temp.ExternalId, agg = q3temp.AggregationLevel } into q3grp
+                                  from q3 in q3grp.DefaultIfEmpty()
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR && h.DataFileId == dataSetId
-                                  group new { ChemId = c.Id, IsoSequence = I.Sequence, ID = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex, QValue = q3.GlobalQvalue } by bio.Id into group1
+                                  group new { ChemId = c.Id, IsoSequence = I.Sequence, ID = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex, QValue = q3 == null ? (double?)null : q3.GlobalQvalue } by bio.Id into group1
 
                                   select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                               ;
@@ -276,9 +280,13 @@ namespace NRTDP.tdReportConverter
 
                                   join q1 in _db.GlobalQualitativeConfidence on new { ID = h.Id, agg = 0 } equals new { ID = q1.HitId, agg = q1.AggregationLevel }
                                   join q2 in _db.GlobalQualitativeConfidence on new { ID = bio.IsoformId, agg = 2 } equals new { ID = q2.ExternalId, agg = q2.AggregationLevel }
-                                  join q3 in _db.GlobalQualitativeConfidence on new { ID = bio.Id, agg = 1 } equals new { ID = q3.ExternalId, agg = q3.AggregationLevel }
+                                  // Left join: the agg=1 (biological-proteoform) confidence exists only for
+                                  // CPR-registered bPFRs (TDPortal). ProSight PD is cPFR-only, so emit the
+                                  // proteoform anyway (its Q-value is just absent) instead of dropping it.
+                                  join q3temp in _db.GlobalQualitativeConfidence on new { ID = bio.Id, agg = 1 } equals new { ID = q3temp.ExternalId, agg = q3temp.AggregationLevel } into q3grp
+                                  from q3 in q3grp.DefaultIfEmpty()
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR
-                                  group new { ChemId = c.Id, IsoSequence = I.Sequence, ID = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex, QValue = q3.GlobalQvalue } by bio.Id into group1
+                                  group new { ChemId = c.Id, IsoSequence = I.Sequence, ID = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex, QValue = q3 == null ? (double?)null : q3.GlobalQvalue } by bio.Id into group1
 
                                   select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                                      ;

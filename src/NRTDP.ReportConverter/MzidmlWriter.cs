@@ -1036,7 +1036,9 @@ namespace NRTDP.tdReportConverter
                 this.WriteAttributeString("post", $"{post}");
                 this.WriteAttributeString("isDecoy", $"false");
 
-                this.WriteCVParam("MS:1003130", "ProSight:proteoform Q-value", String.Format("{0:e4}", bioPForm.ProteoformQValue));
+                // Only TDPortal bPFRs carry a proteoform-level (agg=1) Q-value; omit for cPFR-only ProSight PD.
+                if (bioPForm.ProteoformQValue.HasValue)
+                    this.WriteCVParam("MS:1003130", "ProSight:proteoform Q-value", String.Format("{0:e4}", bioPForm.ProteoformQValue.Value));
                 this.WriteEndElement();
             }
 

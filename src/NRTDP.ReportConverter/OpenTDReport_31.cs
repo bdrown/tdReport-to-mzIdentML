@@ -702,7 +702,9 @@ namespace NRTDP.tdReportConverter
 
         public int EndIndex { get; set; }
         public string IsoformSeqence { get; set; }
-        public double ProteoformQValue { get; set; }
+        // Nullable: the biological-proteoform-level (agg=1) confidence exists only for CPR-registered
+        // bPFRs (TDPortal). ProSight PD is cPFR-only, so this is absent for most of its proteoforms.
+        public double? ProteoformQValue { get; set; }
 
 
 
