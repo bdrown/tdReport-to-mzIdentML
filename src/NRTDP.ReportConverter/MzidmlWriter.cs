@@ -404,6 +404,8 @@ namespace NRTDP.tdReportConverter
             else
             {
                 this.WriteStartElement("AnalysisData");
+                // hitId -> scans: a hit can match multiple scans, so SII ids and their refs include the scan.
+                var hitScans = new Dictionary<int, List<int>>();
                 foreach (var resultSet in resultSets)
                 {
                     //Write  SpectrumIdentificationList
@@ -440,8 +442,11 @@ namespace NRTDP.tdReportConverter
                             foreach (var hit in hits[scan.Key])
                             {
 
+                                if (!hitScans.ContainsKey(hit.Key)) hitScans[hit.Key] = new List<int>();
+                                hitScans[hit.Key].Add(scan.Key);
+
                                 this.WriteStartElement("SpectrumIdentificationItem");
-                                this.WriteAttributeString("id", $"SII_Hit_{hit.Key}_{resultSet.Key}_{rawfile.Key}");
+                                this.WriteAttributeString("id", $"SII_Hit_{hit.Key}_{scan.Key}_{resultSet.Key}_{rawfile.Key}");
                                 this.WriteAttributeString("calculatedMassToCharge", String.Format("{0:f5}", hit.Value.TheoPreMass + 1.00728));
                                 this.WriteAttributeString("chargeState", $"1");
                                 this.WriteAttributeString("experimentalMassToCharge", String.Format("{0:f5}", hit.Value.ObsPreMass + 1.00728));
@@ -514,23 +519,19 @@ namespace NRTDP.tdReportConverter
                     this.WriteEndElement(); //end  SpectrumIdentificationList
                 }
 
+                // Single ProteinDetectionList spanning all result sets (schema allows only one).
+                this.WriteStartElement("ProteinDetectionList");
+                this.WriteAttributeString("id", "PDL_1");
                 foreach (var resultSet in resultSets)
                 {
-                    //Write  SpectrumIdentificationList
-                    this.WriteStartElement("ProteinDetectionList");
-                    this.WriteAttributeString("id", $"PDL_{resultSet.Key}");
-                    this.WriteAttributeString("name", $"{resultSet.Value}");
-
-
                     foreach (var rawfile in rawFiles)
                     {
-
                         var isoforms = db.GetproteinDetectiondata(resultSet.Key, rawfile.Key, FDR);
                         foreach (var isoform in isoforms)
                         {
                             //start ProteinAmbiguityGroup
                             this.WriteStartElement("ProteinAmbiguityGroup");
-                            this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSet.Key}_{rawfile.Key}"); // set to isform maybe entry!?
+                            this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSet.Key}_{rawfile.Key}");
                             this.WriteStartElement("ProteinDetectionHypothesis");
                             this.WriteAttributeString("id", $"PDH_{isoform.Key}_{resultSet.Key}_{rawfile.Key}");
                             this.WriteAttributeString("dBSequence_ref", $"ISO_{isoform.Key}");
@@ -543,15 +544,19 @@ namespace NRTDP.tdReportConverter
                                 this.WriteAttributeString("peptideEvidence_ref", $"PE_Chem_{chem.Key}_ISO_{isoform.Key}");
                                 foreach (var hit in chem.Value.HitId)
                                 {
-                                    this.WriteStartElement("SpectrumIdentificationItemRef");
-                                    this.WriteAttributeString("spectrumIdentificationItem_ref", $"SII_Hit_{hit}_{resultSet.Key}_{rawfile.Key}");
-                                    this.WriteEndElement();
+                                    if (!hitScans.TryGetValue(hit, out var scansForHit)) continue;
+                                    foreach (var scanNo in scansForHit)
+                                    {
+                                        this.WriteStartElement("SpectrumIdentificationItemRef");
+                                        this.WriteAttributeString("spectrumIdentificationItem_ref", $"SII_Hit_{hit}_{scanNo}_{resultSet.Key}_{rawfile.Key}");
+                                        this.WriteEndElement();
+                                    }
                                 }
 
                                 this.WriteEndElement();
 
                             }
-                   
+
                             this.WriteCVParam("MS:1003134", "ProSight:isoform Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.IsoformGlobalQvalue));
                             this.WriteCVParam("MS:1003135", "ProSight:protein Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.EntryGlobalQValue));
 
@@ -559,9 +564,8 @@ namespace NRTDP.tdReportConverter
                             this.WriteEndElement();
                         }
                     }
-
-                    this.WriteEndElement();
                 }
+                this.WriteEndElement(); // end ProteinDetectionList
 
                 this.WriteEndElement();
             }
