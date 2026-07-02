@@ -50,7 +50,7 @@ namespace NRTDP.tdReportConverter
 
             var inputFileInfo = new FileInfo(TDReport);
 
-            var _db = TDReportVersionCheck(inputFileInfo.FullName);
+            using var _db = TDReportVersionCheck(inputFileInfo.FullName);
 
             var datasets = _db.GetDataFiles();
             double count = 0.0;
@@ -105,7 +105,6 @@ namespace NRTDP.tdReportConverter
                 count++;
                 Console.WriteLine(count / datasets.Count());
             }
-            _db.Dispose();
         }
         /// <summary>
         /// 
@@ -116,7 +115,7 @@ namespace NRTDP.tdReportConverter
         public static void ConvertToSingleMzId(string TDReport, string outputPath, double FDR = 0.05, MzidMetadata? metadata = null)
         {
             var inputFileInfo = new FileInfo(TDReport);
-            var _db = TDReportVersionCheck(inputFileInfo.FullName);
+            using var _db = TDReportVersionCheck(inputFileInfo.FullName);
 
             using (FileStream stream = File.Create(outputPath))
             using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII, metadata))
@@ -130,7 +129,6 @@ namespace NRTDP.tdReportConverter
                 writer.WriteAnalysisCollection(_db, FDR);
                 writer.WriteDataCollection(_db, inputFileInfo, FDR);
             }
-            _db.Dispose();
         }
 
         /// <summary>
@@ -143,7 +141,7 @@ namespace NRTDP.tdReportConverter
         {
             var inputFileInfo = new FileInfo(TDReport);
 
-            var _db = TDReportVersionCheck(inputFileInfo.FullName);
+            using var _db = TDReportVersionCheck(inputFileInfo.FullName);
 
             var datasets = _db.GetDataFiles();
             int count = 0;
@@ -167,7 +165,6 @@ namespace NRTDP.tdReportConverter
                 }
                 progress?.Report((double)++count / datasets.Count);
             }
-            _db.Dispose();
         }
 
         // Spectra source-file format CV terms; default to Thermo, overridable via JSON metadata.

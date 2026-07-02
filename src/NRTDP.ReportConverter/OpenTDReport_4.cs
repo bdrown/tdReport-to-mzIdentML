@@ -16,15 +16,19 @@ namespace NRTDP.tdReportConverter
 
         private Dictionary<Tuple<int?, string?>, Modification> _modHash = new Dictionary<Tuple<int?, string?>, Modification>();
 
+        private readonly bool _isProSightPD;
+
         public OpenTDReport_4(string path)
         {
             _db = new ReadTDReport_4(path);
             _path = path;
             SetScoreTypeDict();
+            // Empty ResultParameter is the runtime signal: TDPortal populates it, ProSight PD doesn't.
+            // Cache it: it's read several times per file via AnalysisSoftwareId / SoftwareVersion.
+            _isProSightPD = !_db.ResultParameter.Any();
         }
 
-        // Empty ResultParameter is the runtime signal: TDPortal populates it, ProSight PD doesn't.
-        public bool IsProSightPD => !_db.ResultParameter.Any();
+        public bool IsProSightPD => _isProSightPD;
 
         // ProSight PD stores no software version; TDPortal records the analysis codeset.
         public string? SoftwareVersion => IsProSightPD
