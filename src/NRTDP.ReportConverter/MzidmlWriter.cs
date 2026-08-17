@@ -44,13 +44,13 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output folder for the compressed mzidml files</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSeperateCompressedMzId(string TDReport, string outputFolder, double FDR = 0.05, MzidMetadata? metadata = null)
+        public static void ConvertToSeperateCompressedMzId(string TDReport, string outputFolder, double FDR = 0.05, MzidMetadata? metadata = null, ReportSource source = ReportSource.Auto)
         {
             string tempFilePath = Path.GetTempFileName();
 
             var inputFileInfo = new FileInfo(TDReport);
 
-            using var _db = TDReportVersionCheck(inputFileInfo.FullName);
+            using var _db = TDReportVersionCheck(inputFileInfo.FullName, source);
 
             var datasets = _db.GetDataFiles();
             double count = 0.0;
@@ -112,10 +112,10 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output file for the mzidml file (include the .mzidml)</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSingleMzId(string TDReport, string outputPath, double FDR = 0.05, MzidMetadata? metadata = null)
+        public static void ConvertToSingleMzId(string TDReport, string outputPath, double FDR = 0.05, MzidMetadata? metadata = null, ReportSource source = ReportSource.Auto)
         {
             var inputFileInfo = new FileInfo(TDReport);
-            using var _db = TDReportVersionCheck(inputFileInfo.FullName);
+            using var _db = TDReportVersionCheck(inputFileInfo.FullName, source);
 
             using (FileStream stream = File.Create(outputPath))
             using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII, metadata))
@@ -137,11 +137,11 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output folder for the compressed mzidml files</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSeperateMzId(string TDReport, string outputFolder, double FDR = 0.05, IProgress<double>? progress = null, MzidMetadata? metadata = null)
+        public static void ConvertToSeperateMzId(string TDReport, string outputFolder, double FDR = 0.05, IProgress<double>? progress = null, MzidMetadata? metadata = null, ReportSource source = ReportSource.Auto)
         {
             var inputFileInfo = new FileInfo(TDReport);
 
-            using var _db = TDReportVersionCheck(inputFileInfo.FullName);
+            using var _db = TDReportVersionCheck(inputFileInfo.FullName, source);
 
             var datasets = _db.GetDataFiles();
             int count = 0;
@@ -1180,7 +1180,7 @@ namespace NRTDP.tdReportConverter
 
         public void Dispose() => _writer?.Dispose();
 
-        private static IOpenTDReport TDReportVersionCheck(string file)
+        private static IOpenTDReport TDReportVersionCheck(string file, ReportSource source)
         {
             try
             {
@@ -1196,13 +1196,17 @@ namespace NRTDP.tdReportConverter
                     }
 
                     Console.WriteLine("Found v3.1");
+                    // v3.1 predates ProSight PD's tdReport export, so there is nothing to detect
+                    // and nothing to override; say so rather than silently ignoring --source.
+                    if (source != ReportSource.Auto)
+                        Console.WriteLine("Note: --source is ignored for v3.1 reports (TDPortal only).");
                     return new OpenTDReport_31(file);
                 }
             }
             catch
             {
                 Console.WriteLine("Found v4.0");
-                return new OpenTDReport_4(file);
+                return new OpenTDReport_4(file, source);
             }
         }
     }

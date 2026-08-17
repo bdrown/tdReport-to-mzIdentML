@@ -17,24 +17,50 @@ namespace NRTDP.tdReportConverter
         private Dictionary<Tuple<int?, string?>, Modification> _modHash = new Dictionary<Tuple<int?, string?>, Modification>();
 
         private readonly bool _isProSightPD;
+        private readonly string? _softwareVersion;
 
-        public OpenTDReport_4(string path)
+        /// <summary>
+        /// DbMetadata key holding the TDPortal analysis codeset version (e.g. "4.0.0.81").
+        /// TDPortal writes it; ProSight PD does not, which is what makes it a provenance signal.
+        /// </summary>
+        private const string TDPortalCodesetKey = "GenerateBatchedTargetPufDbHT";
+
+        public OpenTDReport_4(string path, ReportSource source = ReportSource.Auto)
         {
             _db = new ReadTDReport_4(path);
             _path = path;
             SetScoreTypeDict();
-            // Empty ResultParameter is the runtime signal: TDPortal populates it, ProSight PD doesn't.
-            // Cache it: it's read several times per file via AnalysisSoftwareId / SoftwareVersion.
-            _isProSightPD = !_db.ResultParameter.Any();
+
+            // Provenance comes from DbMetadata: TDPortal stamps its assembly versions there
+            // (GenerateBatchedTargetPufDbHT, GenerateReportHT, pufdb_version) while ProSight PD
+            // writes only reporting_version. Reading the codeset key answers "who produced this?"
+            // and "which version?" in one query, so the two answers cannot disagree.
+            // Both fields are cached: they are read several times per raw file via
+            // AnalysisSoftwareId / SoftwareVersion.
+            _softwareVersion = _db.DbMetadata.Where(m => m.MetadataKey == TDPortalCodesetKey)
+                                             .Select(m => m.Value).FirstOrDefault();
+
+            _isProSightPD = source switch
+            {
+                ReportSource.TDPortal => false,
+                ReportSource.ProSightPD => true,
+                // Corroborated by the empty ResultParameter table: TDPortal populates search
+                // parameters, ProSight PD leaves them empty. Requiring both signals means a
+                // TDPortal report missing the codeset key is not silently read as ProSight.
+                _ => _softwareVersion is null && !_db.ResultParameter.Any(),
+            };
+
+            Console.WriteLine(source == ReportSource.Auto
+                ? $"Detected {SourceName} report"
+                : $"Report source forced to {SourceName} (--source)");
         }
+
+        private string SourceName => _isProSightPD ? "ProSight PD" : "TDPortal";
 
         public bool IsProSightPD => _isProSightPD;
 
         // ProSight PD stores no software version; TDPortal records the analysis codeset.
-        public string? SoftwareVersion => IsProSightPD
-            ? null
-            : _db.DbMetadata.Where(m => m.MetadataKey == "GenerateBatchedTargetPufDbHT")
-                            .Select(m => m.Value).FirstOrDefault() ?? "4.0.0";
+        public string? SoftwareVersion => IsProSightPD ? null : _softwareVersion;
 
         /// <summary>
         /// Returns 'DBSequences' AKA isoforms for a rawfile (if specified) that pass an FDR.

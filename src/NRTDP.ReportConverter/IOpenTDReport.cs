@@ -9,8 +9,10 @@ namespace NRTDP.tdReportConverter
     public interface IOpenTDReport : IDisposable
     {
         /// <summary>
-        /// True when the report came from ProSight PD rather than TDPortal (detected via the
-        /// empty ResultParameter table). Drives AnalysisSoftware provenance and parameter guards.
+        /// True when the report came from ProSight PD rather than TDPortal. Inferred from the
+        /// absence of TDPortal's assembly versions in DbMetadata, corroborated by an empty
+        /// ResultParameter table, and overridable via <see cref="ReportSource"/>. Drives
+        /// AnalysisSoftware provenance and parameter guards.
         /// </summary>
         bool IsProSightPD { get; }
 

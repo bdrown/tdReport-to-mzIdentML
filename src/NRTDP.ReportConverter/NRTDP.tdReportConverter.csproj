@@ -18,6 +18,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The per-schema readers are internal; the tests exercise them directly. -->
+    <InternalsVisibleTo Include="NRTDP.ReportConverter.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.9" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.9" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.9" />
