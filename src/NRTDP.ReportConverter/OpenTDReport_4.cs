@@ -97,12 +97,12 @@ namespace NRTDP.tdReportConverter
                                   select new DBSequence
                                   {
                                       ID = group1.Key,
-                                      Accession = group1.Max(x => x.Accession),
-                                      Sequence = group1.Max(x => x.Sequence),
-                                      //UniProtID = group1.Max(x => x.UniProtID),
+                                      Accession = group1.Max(x => x.Accession)!,
+                                      Sequence = group1.Max(x => x.Sequence)!,
+                                      //UniProtID = group1.Max(x => x.UniProtID)!,
                                       TaxonID = group1.Max(x => x.TaxonID),
                                       SciName = "UnIdenitified", //Implement a lookup? - this was removed moving from 3.0 -> 4.0
-                                      Description = group1.Max(x => x.Description)
+                                      Description = group1.Max(x => x.Description)!
                                   };
                 var output = entry_quiry.ToList();
                 return output;
@@ -130,12 +130,12 @@ namespace NRTDP.tdReportConverter
                                   select new DBSequence
                                   {
                                       ID = group1.Key,
-                                      Accession = group1.Max(x => x.Accession),
-                                      Sequence = group1.Max(x => x.Sequence),
-                                      //UniProtID = group1.Max(x => x.UniProtID),
+                                      Accession = group1.Max(x => x.Accession)!,
+                                      Sequence = group1.Max(x => x.Sequence)!,
+                                      //UniProtID = group1.Max(x => x.UniProtID)!,
                                       TaxonID = group1.Max(x => x.TaxonID),
                                       SciName = "UnIdenitified", //Implement a lookup?
-                                      Description = group1.Max(x => x.Description)
+                                      Description = group1.Max(x => x.Description)!
                                   };
                 var output = entry_quiry.ToList();
                 return output;
@@ -293,7 +293,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR && h.DataFileId == dataSetId
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, ID = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex, QValue = q3 == null ? (double?)null : q3.GlobalQvalue } by bio.Id into group1
 
-                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                               ;
 
                 var output = entry_quiry.ToList();
@@ -318,7 +318,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, ID = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex, QValue = q3 == null ? (double?)null : q3.GlobalQvalue } by bio.Id into group1
 
-                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                                      ;
 
                 var output = entry_quiry.ToList();
@@ -349,7 +349,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR && h.DataFileId == dataSetId
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, BioId = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex } by c.Id into group1
 
-                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                               ;
 
                 var output = entry_quiry.ToList();
@@ -369,7 +369,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, BioId = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex } by c.Id into group1
 
-                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                ;
 
                 var output = entry_quiry.ToList();

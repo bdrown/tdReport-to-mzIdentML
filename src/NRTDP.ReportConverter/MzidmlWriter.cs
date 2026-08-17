@@ -975,7 +975,7 @@ namespace NRTDP.tdReportConverter
                     this.WriteAttributeString("location", $"{peptide.Sequence.Length + 1}");
                     this.WriteAttributeString("monoisotopicMassDelta", $"{Ctermmod.DiffMono}");
                     this.WriteAttributeString("avgMassDelta", $"{Ctermmod.DiffAverage}");
-                    this.WriteCVParam($"{peptide.CterminalModSetID}:{peptide.CterminalModID}", Ctermmod.ModName, cvRef: peptide.CterminalModSetID);
+                    this.WriteCVParam($"{peptide.CterminalModSetID}:{peptide.CterminalModID}", Ctermmod.ModName, cvRef: peptide.CterminalModSetID!);
                     this.WriteEndElement();
 
                 }
@@ -987,7 +987,7 @@ namespace NRTDP.tdReportConverter
                     this.WriteAttributeString("location", $"0");
                     this.WriteAttributeString("monoisotopicMassDelta", $"{Ntermmod.DiffMono}");
                     this.WriteAttributeString("avgMassDelta", $"{Ntermmod.DiffAverage}");
-                    this.WriteCVParam($"{peptide.NterminalModSetID}:{peptide.NterminalModID}", Ntermmod.ModName, cvRef: peptide.NterminalModSetID);
+                    this.WriteCVParam($"{peptide.NterminalModSetID}:{peptide.NterminalModID}", Ntermmod.ModName, cvRef: peptide.NterminalModSetID!);
                     this.WriteEndElement();
                 }
                 //Add internal Mods

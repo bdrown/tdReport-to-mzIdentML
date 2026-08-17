@@ -75,12 +75,12 @@ namespace NRTDP.tdReportConverter
                                   select new DBSequence
                                   {
                                       ID = group1.Key,
-                                      Accession = group1.Max(x => x.Accession),
-                                      Sequence = group1.Max(x => x.Sequence),
-                                      UniProtID = group1.Max(x => x.UniProtID),
+                                      Accession = group1.Max(x => x.Accession)!,
+                                      Sequence = group1.Max(x => x.Sequence)!,
+                                      UniProtID = group1.Max(x => x.UniProtID)!,
                                       TaxonID = group1.Max(x => x.TaxonID),
-                                      SciName = group1.Max(x => x.SciName),
-                                      Description = group1.Max(x => x.Description)
+                                      SciName = group1.Max(x => x.SciName)!,
+                                      Description = group1.Max(x => x.Description)!
                                   };
 
 
@@ -115,12 +115,12 @@ namespace NRTDP.tdReportConverter
                                   select new DBSequence
                                   {
                                       ID = group1.Key,
-                                      Accession = group1.Max(x => x.Accession),
-                                      Sequence = group1.Max(x => x.Sequence),
-                                      UniProtID = group1.Max(x => x.UniProtID),
+                                      Accession = group1.Max(x => x.Accession)!,
+                                      Sequence = group1.Max(x => x.Sequence)!,
+                                      UniProtID = group1.Max(x => x.UniProtID)!,
                                       TaxonID = group1.Max(x => x.TaxonID),
-                                      SciName = group1.Max(x => x.SciName),
-                                      Description = group1.Max(x => x.Description)
+                                      SciName = group1.Max(x => x.SciName)!,
+                                      Description = group1.Max(x => x.Description)!
                                   };
 
 
@@ -240,7 +240,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR && h.DataFileId == dataSetId
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, ID = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex, QValue = q3.GlobalQvalue } by bio.Id into group1
 
-                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
 
 
                                      ;
@@ -263,7 +263,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, ID = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex, QValue = q3.GlobalQvalue } by bio.Id into group1
 
-                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                                       ;
 
 
@@ -289,7 +289,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR && h.DataFileId == dataSetId
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, BioId = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex } by c.Id into group1
 
-                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                                       ;
 
                 var output = entry_quiry.ToList();
@@ -309,7 +309,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, BioId = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex } by c.Id into group1
 
-                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                                       ;
 
                 var output = entry_quiry.ToList();
@@ -378,7 +378,7 @@ namespace NRTDP.tdReportConverter
 
                               where cf.ChemicalProteoformId == ChemID
                               group new BioMod { ModTypeId = m.ModificationTypeId, ModSetId = cf.ModificationSetId, ChemId = ChemID, AminoAcid = m.AminoAcid, DiffAverage = m.DiffAverage, DiffMono = m.DiffMonoisotopic, ModId = m.Id, ModName = m.Name, StartIndex = cf.StartIndex } by cf.ChemicalProteoformId into g1
-                              select new BioMod { ModTypeId = g1.Max(x => x.ModTypeId), ModSetId = g1.Max(x => x.ModSetId), ChemId = ChemID, AminoAcid = g1.Max(x => x.AminoAcid), DiffAverage = g1.Max(x => x.DiffAverage), DiffMono = g1.Max(x => x.DiffMono), ModId = g1.Max(x => x.ModId), ModName = g1.Max(x => x.ModName), StartIndex = g1.Max(x => x.StartIndex) }
+                              select new BioMod { ModTypeId = g1.Max(x => x.ModTypeId), ModSetId = g1.Max(x => x.ModSetId), ChemId = ChemID, AminoAcid = g1.Max(x => x.AminoAcid), DiffAverage = g1.Max(x => x.DiffAverage), DiffMono = g1.Max(x => x.DiffMono), ModId = g1.Max(x => x.ModId), ModName = g1.Max(x => x.ModName)!, StartIndex = g1.Max(x => x.StartIndex) }
                                ;
 
             var output = entry_quiry.ToList();
@@ -520,9 +520,9 @@ namespace NRTDP.tdReportConverter
                         TheoPreMass = hitscan.TheoPreMass,
                         Scans = new HashSet<int>() { hitscan.ScanNo },
                         FragmentIons = fragmentMap[hitscan.HitId], //this.GetFragmentsforHit(hitscan.HitId),
-                        PScore = hitscan.pscore.Value,
-                        CScore = hitscan.cscore.Value,
-                        EValue = hitscan.escore.Value,
+                        PScore = hitscan.pscore!.Value,
+                        CScore = hitscan.cscore!.Value,
+                        EValue = hitscan.escore!.Value,
                         Cleavages = hitscan.Cleavages
                     };
 
@@ -612,9 +612,9 @@ namespace NRTDP.tdReportConverter
 
     public class ProteinAmbiguityGroup
     {
-        public HashSet<int> HitId { get; set; }
+        public HashSet<int> HitId { get; set; } = new();
         public int ChemId { get; set; }
-        public HashSet<int> BioId { get; set; }
+        public HashSet<int> BioId { get; set; } = new();
         public int IsoformId { get; set; }
         public double IsoformGlobalQvalue { get; set; }
         public double EntryGlobalQValue { get; set; }
@@ -626,13 +626,13 @@ namespace NRTDP.tdReportConverter
     {
 
         public int ChemId { get; set; }
-        public HashSet<int> BioId { get; set; }
-        public HashSet<int> IsoformId { get; set; }
+        public HashSet<int> BioId { get; set; } = new();
+        public HashSet<int> IsoformId { get; set; } = new();
         public double ObsPreMass { get; set; }
         public double TheoPreMass { get; set; }
-        public HashSet<int> Scans { get; set; }
+        public HashSet<int> Scans { get; set; } = new();
 
-        public Dictionary<int, Dictionary<string, IList<FragmentIon>>> FragmentIons { get; set; }
+        public Dictionary<int, Dictionary<string, IList<FragmentIon>>> FragmentIons { get; set; } = new();
 
         public double PScore { get; set; }
         public double EValue { get; set; }
@@ -655,30 +655,30 @@ namespace NRTDP.tdReportConverter
         public double TheoreticalMz { get; set; }
         public int Charge { get; set; }
         public int IonNumber { get; set; }
-        public string IonType { get; set; }
+        public string IonType { get; set; } = null!;
 
     }
     public class BioMod
     {
         public int ChemId { get; set; }
-        public string ModSetId { get; set; }
+        public string? ModSetId { get; set; }
         public int? ModId { get; set; }
         public int? ModTypeId { get; set; }
         public int StartIndex { get; set; }
-        public string ModName { get; set; }
+        public string ModName { get; set; } = null!;
         public double? DiffAverage { get; set; }
         public double? DiffMono { get; set; }
-        public string AminoAcid { get; set; }
+        public string? AminoAcid { get; set; }
     }
     public class DBSequence
     {
         public int ID { get; set; }
-        public string Accession { get; set; }
-        public string Sequence { get; set; }
-        public string UniProtID { get; set; }
+        public string Accession { get; set; } = null!;
+        public string Sequence { get; set; } = null!;
+        public string UniProtID { get; set; } = null!;
         public int TaxonID { get; set; }
-        public string SciName { get; set; }
-        public string Description { get; set; }
+        public string SciName { get; set; } = null!;
+        public string Description { get; set; } = null!;
 
 
     }
@@ -697,11 +697,11 @@ namespace NRTDP.tdReportConverter
 
         public int? CterminalModID { get; set; }
 
-        public string Sequence { get; set; }
+        public string Sequence { get; set; } = null!;
         public int StartIndex { get; set; }
 
         public int EndIndex { get; set; }
-        public string IsoformSeqence { get; set; }
+        public string IsoformSeqence { get; set; } = null!;
         // Nullable: the biological-proteoform-level (agg=1) confidence exists only for CPR-registered
         // bPFRs (TDPortal). ProSight PD is cPFR-only, so this is absent for most of its proteoforms.
         public double? ProteoformQValue { get; set; }
@@ -723,11 +723,11 @@ namespace NRTDP.tdReportConverter
 
         public int? CterminalModID { get; set; }
 
-        public string Sequence { get; set; }
+        public string Sequence { get; set; } = null!;
         public int StartIndex { get; set; }
 
         public int EndIndex { get; set; }
-        public string IsoformSeqence { get; set; }
+        public string IsoformSeqence { get; set; } = null!;
 
 
 

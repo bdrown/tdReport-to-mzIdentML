@@ -19,7 +19,7 @@ namespace NRTDP.TDReport31
         public DbSet<GlobalQualitativeConfidence> GlobalQualitativeConfidence { get; set; }
         public DbSet<ChemicalProteoform> ChemicalProteoform { get; set; }
 
-        public DbSet<Entry> Entry { get; set; }
+        public new DbSet<Entry> Entry { get; set; } = null!;
         public DbSet<Isoform> Isoform { get; set; }
 
         public DbSet<BiologicalProteoform> BiologicalProteoform { get; set; }
@@ -68,7 +68,8 @@ options.UseSqlite($"Data Source={_tDReport}") ;
         public double FragmentationMzLowerOffset { get; set; }
         public double FragmentationMzUpperOffset { get; set; }
 
-        public string FragmentationMethodId { get; set; }
+        // NULL for MS1 scans in real reports (2366 of 6424 in a ProSight PD report).
+        public string? FragmentationMethodId { get; set; }
 
         public double FragmentationEnergy { get; set; }
 
@@ -105,7 +106,7 @@ options.UseSqlite($"Data Source={_tDReport}") ;
         public int IonNumber { get; set; }
         public int CleavageSiteIndex { get; set; }
         public bool IsDeltaM { get; set; }
-        public string IonTypeId { get; set; }
+        public string IonTypeId { get; set; } = null!;
         public int HitId { get; set; }
 
     }
@@ -113,19 +114,19 @@ options.UseSqlite($"Data Source={_tDReport}") ;
     {
         [Key]
         public int Id { get; set; }
-        public string ModificationSetId { get; set; }
-        public string SwissprotTerm { get; set; }
+        public string ModificationSetId { get; set; } = null!;
+        public string SwissprotTerm { get; set; } = null!;
 
-        public string Name { get; set; }
-        public string Definition { get; set; }
-        public string Comment { get; set; }
+        public string Name { get; set; } = null!;
+        public string Definition { get; set; } = null!;
+        public string Comment { get; set; } = null!;
         public double? DiffAverage { get; set; }
         public double? DiffMonoisotopic { get; set; }
-        public string DiffFormula { get; set; }
-        public string Formula { get; set; }
+        public string DiffFormula { get; set; } = null!;
+        public string Formula { get; set; } = null!;
         public double MassAverage { get; set; }
         public double MassMonoisotopic { get; set; }
-        public string AminoAcid { get; set; }
+        public string AminoAcid { get; set; } = null!;
         public int? Source { get; set; }
         public int? Terminus { get; set; }
         public int? FormalCharge { get; set; }
@@ -143,11 +144,11 @@ options.UseSqlite($"Data Source={_tDReport}") ;
         public int Type { get; set; }
         public int StartIndex { get; set; }
         public int EndIndex { get; set; }
-        public string ReplacementSequence { get; set; }
-        public string OriginalType { get; set; }
-        public string Description { get; set; }
+        public string ReplacementSequence { get; set; } = null!;
+        public string OriginalType { get; set; } = null!;
+        public string Description { get; set; } = null!;
 
-        public string ModificationSetId { get; set; }
+        public string ModificationSetId { get; set; } = null!;
         public int ModificationId { get; set; }
         public double PriorWeight { get; set; }
         public int ChemicalProteoformId { get; set; }
@@ -160,8 +161,8 @@ options.UseSqlite($"Data Source={_tDReport}") ;
         [Key]
         public int Id { get; set; }
         public string? GroupName { get; set; }
-        public string  Name { get; set; }
-        public string Value { get; set; }
+        public string  Name { get; set; } = null!;
+        public string Value { get; set; } = null!;
         public int? ResultSetId { get; set; }
 
     }
@@ -169,12 +170,12 @@ options.UseSqlite($"Data Source={_tDReport}") ;
     {
         [Key]
         public int Id { get; set; }
-        public string Name { get; set; }
-        public string Symbol { get; set; }
-        public string ExtendedSymbol { get; set; }
+        public string Name { get; set; } = null!;
+        public string Symbol { get; set; } = null!;
+        public string ExtendedSymbol { get; set; } = null!;
         public double MonoisotopicMass { get; set; }
         public double AverageMass { get; set; }
-        public string Formula { get; set; }
+        public string Formula { get; set; } = null!;
 
     }
 
@@ -234,7 +235,7 @@ options.UseSqlite($"Data Source={_tDReport}") ;
         public string? NTerminalModificationSetId { get; set; }
         public string? CTerminalModificationSetId { get; set; }
         public string? ModificationHash { get; set; }
-        public string Sequence { get; set; }
+        public string Sequence { get; set; } = null!;
 
 
 
@@ -243,9 +244,9 @@ options.UseSqlite($"Data Source={_tDReport}") ;
     {
         [Key]
         public int Id { get; set; }
-        public string UniProtId { get; set; }
-        public string AccessionNumber { get; set; }
-        public string Description { get; set; }
+        public string UniProtId { get; set; } = null!;
+        public string AccessionNumber { get; set; } = null!;
+        public string Description { get; set; } = null!;
         public int TaxonId { get; set; }
         public double PriorWeight { get; set; }
 
@@ -266,11 +267,11 @@ options.UseSqlite($"Data Source={_tDReport}") ;
     {
         [Key]
         public int Id { get; set; }
-        public string AccessionNumber { get; set; }
-        public string Description { get; set; }
+        public string AccessionNumber { get; set; } = null!;
+        public string Description { get; set; } = null!;
         public bool IsSubsequence { get; set; }
         public double PriorWeight { get; set; }
-        public string Sequence { get; set; }
+        public string Sequence { get; set; } = null!;
         public int EntryId { get; set; }
     }
     public class BiologicalProteoform
@@ -279,7 +280,7 @@ options.UseSqlite($"Data Source={_tDReport}") ;
         public int Id { get; set; }
         public int ProteoformRecordNum { get; set; }
         public bool IsEndogenousCleavage { get; set; }
-        public string Description { get; set; }
+        public string Description { get; set; } = null!;
         public int StartIndex { get; set; }
         public int EndIndex { get; set; }
         public int IsoformId { get; set; }
@@ -300,27 +301,28 @@ options.UseSqlite($"Data Source={_tDReport}") ;
     {
         [Key]
         public int Id { get; set; }
-        public string ScientificName { get; set; }
+        public string ScientificName { get; set; } = null!;
     }
 
     public class DataFile
     {
         [Key]
         public int ID { get; set; }
-        public string Name { get; set; }
-        public string FilePath { get; set; }
+        public string Name { get; set; } = null!;
+        public string FilePath { get; set; } = null!;
 
         public DateTime CreationDate { get; set; }
-        public string Creator { get; set; }
+        public string Creator { get; set; } = null!;
 
-        public string Description { get; set; }
+        // NULL in real reports; the data-file description is often unset.
+        public string? Description { get; set; }
 
     }
 
     public class ResultSet
     {
         public int Id { get; set; }
-        public string Name { get; set; }
+        public string Name { get; set; } = null!;
         public bool IsActive { get; set; }
 
     }
@@ -328,10 +330,10 @@ options.UseSqlite($"Data Source={_tDReport}") ;
     {
         [Key]
         public int Id { get; set; }
-        public string Name { get; set; }
-        public string Description { get; set; }
-        public string KeyWord { get; set; }
-        public string Format { get; set; }
+        public string Name { get; set; } = null!;
+        public string Description { get; set; } = null!;
+        public string KeyWord { get; set; } = null!;
+        public string Format { get; set; } = null!;
         public double BadValueRange { get; set; }
         public double GoodValueRange { get; set; }
         public int iSLogScale { get; set; }

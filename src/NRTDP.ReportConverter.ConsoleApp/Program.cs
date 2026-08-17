@@ -33,7 +33,7 @@ namespace NRTDP.tdReportConverter.ConsoleApp
                     result.AddError($"--fdr must be greater than 0 and at most 1 (a fraction, not a percentage); got {value}.");
             });
 
-            var metadataOption = new Option<FileInfo?>("--metadata", "-m")
+            var metadataOption = new Option<FileInfo>("--metadata", "-m")
             {
                 Description = "JSON metadata-overrides file for fields the tdReport does not contain - "
                             + "submitter, search database, software, and spectra format. "
