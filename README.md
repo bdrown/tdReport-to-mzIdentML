@@ -14,7 +14,7 @@ writes a schema‑valid **mzIdentML 1.1.0** document per raw file.
 - **One `.mzid` per raw file** in the report (or a single whole‑report document, or gzipped output).
 - **FDR filtering** at conversion time.
 - **Optional metadata overrides** (submitter, search database, software, spectra format) that the
-  tdReport does not itself contain — supplied via a small JSON file.
+  tdReport does not itself contain — supplied via a small YAML or JSON file.
 - Ships as a reusable **NuGet library** (`NRTDP.tdReportConverter`) plus a thin console app.
 
 ## Requirements
@@ -55,7 +55,7 @@ Run with `--help` for the full list.
 dotnet run --project src/NRTDP.ReportConverter.ConsoleApp -- report.tdReport
 
 # Custom output folder + 5% FDR + metadata overrides
-dotnet run --project src/NRTDP.ReportConverter.ConsoleApp -- report.tdReport ./out --fdr 0.05 -m mzid-metadata.json
+dotnet run --project src/NRTDP.ReportConverter.ConsoleApp -- report.tdReport ./out --fdr 0.05 -m mzid-metadata.yaml
 ```
 
 > **Note:** FDR and the metadata file used to be positional (`report.tdReport ./out 0.05 meta.json`).
@@ -81,18 +81,31 @@ dotnet run --project src/NRTDP.ReportConverter.ConsoleApp -- report.tdReport --s
 ## Metadata overrides
 
 Some mzIdentML fields aren't stored in a tdReport (who submitted the data, which sequence database
-was searched, the software version, the raw‑file format). Provide them in a JSON file; every section
-and field is optional and falls back to a built‑in default. See
+was searched, the software version, the raw‑file format). Provide them in a **YAML or JSON** file;
+every section and field is optional and falls back to a built‑in default. See
+[`mzid-metadata.example.yaml`](mzid-metadata.example.yaml) or
 [`mzid-metadata.example.json`](mzid-metadata.example.json) for the full shape:
 
-```json
-{
-  "submitter":      { "firstName": "...", "lastName": "...", "email": "...", "organization": "..." },
-  "software":       { "name": "...", "version": "...", "uri": "..." },
-  "searchDatabase": { "name": "...", "version": "...", "location": "...", "taxonomy": "..." },
-  "spectraData":    { "fileFormatAccession": "MS:1000563", "fileFormatName": "Thermo RAW format" }
-}
+```yaml
+submitter:
+  firstName: Jane
+  lastName: Doe
+  email: jane.doe@example.edu
+  organization: Example University
+software:
+  name: ProSight PD
+  version: "4.3"
+searchDatabase:
+  name: UniProt human (reviewed)
+  taxonomy: Homo sapiens (9606)
+spectraData:
+  fileFormatAccession: MS:1000563
+  fileFormatName: Thermo RAW format
 ```
+
+The format is chosen by file extension — `.yaml`/`.yml` or `.json`. Any other extension is tried as
+YAML and then as JSON, so an extensionless file works either way. Unknown keys are ignored, so a
+typo costs you that one field rather than the whole run.
 
 ## Library usage
 

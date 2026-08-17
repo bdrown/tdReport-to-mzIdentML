@@ -1,13 +1,17 @@
+using System;
 using System.IO;
 using System.Text.Json;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace NRTDP.tdReportConverter
 {
     /// <summary>
     /// Optional overrides for mzIdentML metadata that the tdReport does not contain
     /// (submitter contact, search database identity, software details, spectra file
-    /// format). Loaded from a JSON file; any section/field left absent falls back to a
-    /// built-in default applied by <see cref="MzidmlWriter"/>. See mzid-metadata.example.json.
+    /// format). Loaded from a YAML or JSON file; any section/field left absent falls back
+    /// to a built-in default applied by <see cref="MzidmlWriter"/>.
+    /// See mzid-metadata.example.yaml / mzid-metadata.example.json.
     /// </summary>
     public sealed class MzidMetadata
     {
@@ -23,18 +27,51 @@ namespace NRTDP.tdReportConverter
             AllowTrailingCommas = true,
         };
 
+        // camelCase keys to match the JSON form, and unmatched keys are ignored so a typo
+        // degrades to the built-in default rather than throwing mid-conversion.
+        private static readonly IDeserializer _yamlDeserializer = new DeserializerBuilder()
+            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .WithCaseInsensitivePropertyMatching()
+            .IgnoreUnmatchedProperties()
+            .Build();
+
         /// <summary>
-        /// Loads metadata overrides from a JSON file. Returns an empty instance (all
-        /// defaults) when <paramref name="path"/> is null/empty or the file is missing.
+        /// Loads metadata overrides from a YAML (.yaml/.yml) or JSON (.json) file, chosen by
+        /// extension; anything else is tried as YAML and then as JSON. Returns an empty instance
+        /// (all defaults) when <paramref name="path"/> is null/empty or the file is missing.
         /// </summary>
         public static MzidMetadata Load(string? path)
         {
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 return new MzidMetadata();
 
-            var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<MzidMetadata>(json, _jsonOptions) ?? new MzidMetadata();
+            var text = File.ReadAllText(path);
+            var extension = Path.GetExtension(path);
+
+            if (extension.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
+                extension.Equals(".yml", StringComparison.OrdinalIgnoreCase))
+                return FromYaml(text);
+
+            if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
+                return FromJson(text);
+
+            // Unknown extension: YAML 1.2 is a superset of JSON, so it parses both. Fall back to
+            // the JSON reader anyway, since it tolerates // comments and trailing commas.
+            try
+            {
+                return FromYaml(text);
+            }
+            catch (YamlDotNet.Core.YamlException)
+            {
+                return FromJson(text);
+            }
         }
+
+        private static MzidMetadata FromJson(string text) =>
+            JsonSerializer.Deserialize<MzidMetadata>(text, _jsonOptions) ?? new MzidMetadata();
+
+        private static MzidMetadata FromYaml(string text) =>
+            _yamlDeserializer.Deserialize<MzidMetadata>(text) ?? new MzidMetadata();
     }
 
     public sealed class SubmitterInfo

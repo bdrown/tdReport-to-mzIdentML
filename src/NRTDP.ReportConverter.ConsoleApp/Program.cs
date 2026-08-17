@@ -35,9 +35,9 @@ namespace NRTDP.tdReportConverter.ConsoleApp
 
             var metadataOption = new Option<FileInfo>("--metadata", "-m")
             {
-                Description = "JSON metadata-overrides file for fields the tdReport does not contain - "
-                            + "submitter, search database, software, and spectra format. "
-                            + "See mzid-metadata.example.json.",
+                Description = "YAML or JSON metadata-overrides file for fields the tdReport does not "
+                            + "contain - submitter, search database, software, and spectra format. "
+                            + "See mzid-metadata.example.yaml.",
             };
             metadataOption.AcceptExistingOnly();
 

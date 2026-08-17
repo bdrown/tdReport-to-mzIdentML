@@ -202,8 +202,10 @@ namespace NRTDP.tdReportConverter
             this.WriteStartElement("DatabaseName");
             this.WriteUserParam(searchDb?.Name ?? DefaultDbName);
             this.WriteEndElement(); //end DatabaseName
+            // SearchDatabase allows only cvParam after DatabaseName, so taxonomy has to be a
+            // CV term rather than a userParam - a userParam here fails schema validation.
             if (!string.IsNullOrEmpty(searchDb?.Taxonomy))
-                this.WriteUserParam("taxonomy", searchDb.Taxonomy);
+                this.WriteCVParam("MS:1001469", "taxonomy: scientific name", searchDb.Taxonomy);
             this.WriteEndElement(); //end SearchDatabase
 
             //SpectraDAta
@@ -1003,7 +1005,7 @@ namespace NRTDP.tdReportConverter
                         // Omit the optional residues attr when absent (ProSight PD terminal mods) rather than emit residues="".
                         if (!string.IsNullOrEmpty(pepmod.AminoAcid))
                             this.WriteAttributeString("residues", pepmod.AminoAcid);
-                        this.WriteCVParam($"{pepmod.ModSetId}:{pepmod.ModId}", pepmod.ModName, cvRef: pepmod.ModSetId);
+                        this.WriteCVParam($"{pepmod.ModSetId}:{pepmod.ModId}", pepmod.ModName, cvRef: pepmod.ModSetId!);
                         this.WriteEndElement();
                     }
 

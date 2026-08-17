@@ -10,10 +10,14 @@ public class MzidMetadataTests : IDisposable
 {
     private readonly List<string> _tempFiles = new();
 
-    private string WriteJson(string json)
+    private string WriteJson(string json) => Write(json, ".json");
+
+    private string WriteYaml(string yaml) => Write(yaml, ".yaml");
+
+    private string Write(string text, string extension)
     {
-        var path = Path.Combine(Path.GetTempPath(), $"mzid-metadata-{Guid.NewGuid():N}.json");
-        File.WriteAllText(path, json);
+        var path = Path.Combine(Path.GetTempPath(), $"mzid-metadata-{Guid.NewGuid():N}{extension}");
+        File.WriteAllText(path, text);
         _tempFiles.Add(path);
         return path;
     }
@@ -117,6 +121,117 @@ public class MzidMetadataTests : IDisposable
 
         Assert.Null(metadata.Submitter);
         Assert.Null(metadata.Software);
+    }
+
+    [Fact]
+    public void Yaml_loads_all_sections()
+    {
+        var path = WriteYaml("""
+            submitter:
+              firstName: Ada
+              lastName: Lovelace
+              email: ada@example.org
+              organization: Example University
+            software:
+              name: TDPortal
+              version: 4.0.0.81
+            searchDatabase:
+              name: Example DB
+              taxonomy: Homo sapiens
+              numDatabaseSequences: 12345
+            spectraData:
+              fileFormatAccession: MS:1000563
+              fileFormatName: Thermo RAW format
+            """);
+
+        var metadata = MzidMetadata.Load(path);
+
+        Assert.Equal("Ada", metadata.Submitter?.FirstName);
+        Assert.Equal("Example University", metadata.Submitter?.Organization);
+        Assert.Equal("4.0.0.81", metadata.Software?.Version);
+        Assert.Equal(12345, metadata.SearchDatabase?.NumDatabaseSequences);
+        Assert.Equal("Thermo RAW format", metadata.SpectraData?.FileFormatName);
+    }
+
+    [Fact]
+    public void Yaml_absent_sections_stay_null_and_comments_are_ignored()
+    {
+        var path = WriteYaml("""
+            # only the software section is set here
+            software:
+              name: ProSight PD
+            """);
+
+        var metadata = MzidMetadata.Load(path);
+
+        Assert.Equal("ProSight PD", metadata.Software?.Name);
+        Assert.Null(metadata.Software?.Version);
+        Assert.Null(metadata.Submitter);
+        Assert.Null(metadata.SearchDatabase);
+    }
+
+    [Fact]
+    public void Yaml_property_names_are_case_insensitive()
+    {
+        var path = WriteYaml("""
+            Software:
+              Name: TDPortal
+              VERSION: 4.0.0.81
+            """);
+
+        var metadata = MzidMetadata.Load(path);
+
+        Assert.Equal("TDPortal", metadata.Software?.Name);
+        Assert.Equal("4.0.0.81", metadata.Software?.Version);
+    }
+
+    [Fact]
+    public void Yaml_unknown_keys_fall_back_to_defaults_rather_than_throwing()
+    {
+        // A typo should cost the user that one field, not the whole conversion.
+        var path = WriteYaml("""
+            software:
+              name: TDPortal
+              verison: 4.0.0.81
+            """);
+
+        var metadata = MzidMetadata.Load(path);
+
+        Assert.Equal("TDPortal", metadata.Software?.Name);
+        Assert.Null(metadata.Software?.Version);
+    }
+
+    [Fact]
+    public void Yml_extension_is_also_yaml()
+    {
+        var path = Write("software:\n  name: TDPortal\n", ".yml");
+
+        var metadata = MzidMetadata.Load(path);
+
+        Assert.Equal("TDPortal", metadata.Software?.Name);
+    }
+
+    [Fact]
+    public void Empty_yaml_yields_all_defaults()
+    {
+        var path = WriteYaml("# nothing set\n");
+
+        var metadata = MzidMetadata.Load(path);
+
+        Assert.Null(metadata.Submitter);
+        Assert.Null(metadata.Software);
+    }
+
+    [Theory]
+    [InlineData("software:\n  name: TDPortal\n")]
+    [InlineData("{ \"software\": { \"name\": \"TDPortal\" } }")]
+    public void Unrecognised_extension_accepts_either_format(string text)
+    {
+        var path = Write(text, ".txt");
+
+        var metadata = MzidMetadata.Load(path);
+
+        Assert.Equal("TDPortal", metadata.Software?.Name);
     }
 
     public void Dispose()
