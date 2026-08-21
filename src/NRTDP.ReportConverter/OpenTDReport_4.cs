@@ -483,47 +483,78 @@ namespace NRTDP.tdReportConverter
         /// <param name="FDR"></param>
         /// <returns></returns>
 
-        public Dictionary<int, Dictionary<int, SpectrumIdentificationItem_Hit>> CreateBatchOfHitsWithIons(int ResultSetId, int dataFileId, double FDR = 0.05)
+        /// <summary>One (hit, scan) row passing the FDR filters, as projected by <see cref="FilteredHits"/>.</summary>
+        private sealed class HitRow
+        {
+            public double GQValue { get; set; }
+            public double PScore { get; set; }
+            public double EScore { get; set; }
+            public double CScore { get; set; }
+            public double Cleavages { get; set; }
+            public int ChemId { get; set; }
+            public int HitId { get; set; }
+            public double ObsPreMass { get; set; }
+            public double TheoPreMass { get; set; }
+            public int IsoformId { get; set; }
+            public int BioId { get; set; }
+            public int ScanNo { get; set; }
+        }
+
+        /// <summary>
+        /// The hits this reader will report for a result set / raw file pair. Both
+        /// <see cref="CreateBatchOfHitsWithIons"/> and <see cref="HasHits"/> go through here so that
+        /// "a hit the writer will emit" has exactly one definition. The inner joins on HitScore can
+        /// drop rows, so a cheaper hand-written existence check would risk disagreeing with the full
+        /// query - and the writer would then announce a SpectrumIdentificationList that it leaves
+        /// empty, which the mzIdentML schema rejects.
+        /// </summary>
+        private IQueryable<HitRow> FilteredHits(int ResultSetId, int dataFileId, double FDR)
         {
             //get the hits - need Isoform ID, chemId, all bioIds, scan no - group by hit, have multi hits for different scans seperate
-            var hit_query = from h in _db.Hit
-                            join bio in _db.BiologicalProteoform on h.ChemicalProteoformId equals bio.ChemicalProteoformId
-                            join c in _db.ChemicalProteoform on h.ChemicalProteoformId equals c.Id
-                            join hToS in _db.HitToSpectrum on h.Id equals hToS.HitId
-                            join sToSH in _db.ScanHeaderToSpectrum on hToS.SpectrumId equals sToSH.SpectrumId
-                            join SH in _db.ScanHeader on sToSH.ScanHeaderId equals SH.Id
+            return from h in _db.Hit
+                   join bio in _db.BiologicalProteoform on h.ChemicalProteoformId equals bio.ChemicalProteoformId
+                   join c in _db.ChemicalProteoform on h.ChemicalProteoformId equals c.Id
+                   join hToS in _db.HitToSpectrum on h.Id equals hToS.HitId
+                   join sToSH in _db.ScanHeaderToSpectrum on hToS.SpectrumId equals sToSH.SpectrumId
+                   join SH in _db.ScanHeader on sToSH.ScanHeaderId equals SH.Id
 
-                            join ps in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_pScore"] } equals new { id = ps.HitId, type = ps.ScoreTypeId }
-                            join es in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_eValue"] } equals new { id = es.HitId, type = es.ScoreTypeId }
-                            join cs in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_cScore"] } equals new { id = cs.HitId, type = cs.ScoreTypeId }
-                            join pcs in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_interResidueCleavages"] } equals new { id = pcs.HitId, type = pcs.ScoreTypeId }
+                   join ps in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_pScore"] } equals new { id = ps.HitId, type = ps.ScoreTypeId }
+                   join es in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_eValue"] } equals new { id = es.HitId, type = es.ScoreTypeId }
+                   join cs in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_cScore"] } equals new { id = cs.HitId, type = cs.ScoreTypeId }
+                   join pcs in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_interResidueCleavages"] } equals new { id = pcs.HitId, type = pcs.ScoreTypeId }
 
-                            join q1 in _db.GlobalQualitativeConfidence on new { ID = h.Id, agg = 0 } equals new { ID = q1.HitId, agg = q1.AggregationLevel }
-                            join q2 in _db.GlobalQualitativeConfidence on new { ID = bio.IsoformId, agg = 2 } equals new { ID = q2.ExternalId, agg = q2.AggregationLevel }
-                            orderby h.Id
-                            where h.DataFileId == dataFileId &&
-                                  h.ResultSetId == ResultSetId &&
-                                  q1.GlobalQvalue < FDR &&
-                                  q2.GlobalQvalue < FDR &&
-                                  SH.Level == 2
-                            select new
-                            {
-                                gqvalue = q1.GlobalQvalue,
-                                // cScore is NULL for uncharacterized ProSight PD hits; coalesce to 0 (EF5's old default).
-                                pscore = ps.Value ?? 0,
-                                escore = es.Value ?? 0,
-                                cscore = cs.Value ?? 0,
-                                Cleavages = pcs.Value ?? 0,
-                                ChemId = c.Id,
-                                HitId = h.Id,
-                                ObsPreMass = h.ObservedPrecursorMass,
-                                TheoPreMass = c.MonoisotopicMass,
-                                IsoformId = bio.IsoformId,
-                                BioId = bio.Id,
-                                ScanNo = SH.ScanIndex
-                            };
+                   join q1 in _db.GlobalQualitativeConfidence on new { ID = h.Id, agg = 0 } equals new { ID = q1.HitId, agg = q1.AggregationLevel }
+                   join q2 in _db.GlobalQualitativeConfidence on new { ID = bio.IsoformId, agg = 2 } equals new { ID = q2.ExternalId, agg = q2.AggregationLevel }
+                   orderby h.Id
+                   where h.DataFileId == dataFileId &&
+                         h.ResultSetId == ResultSetId &&
+                         q1.GlobalQvalue < FDR &&
+                         q2.GlobalQvalue < FDR &&
+                         SH.Level == 2
+                   select new HitRow
+                   {
+                       GQValue = q1.GlobalQvalue,
+                       // cScore is NULL for uncharacterized ProSight PD hits; coalesce to 0 (EF5's old default).
+                       PScore = ps.Value ?? 0,
+                       EScore = es.Value ?? 0,
+                       CScore = cs.Value ?? 0,
+                       Cleavages = pcs.Value ?? 0,
+                       ChemId = c.Id,
+                       HitId = h.Id,
+                       ObsPreMass = h.ObservedPrecursorMass,
+                       TheoPreMass = c.MonoisotopicMass,
+                       IsoformId = bio.IsoformId,
+                       BioId = bio.Id,
+                       ScanNo = SH.ScanIndex
+                   };
+        }
 
-            var output = hit_query.ToList();
+        public bool HasHits(int ResultSetId, int dataFileId, double FDR = 0.05) =>
+            FilteredHits(ResultSetId, dataFileId, FDR).Any();
+
+        public Dictionary<int, Dictionary<int, SpectrumIdentificationItem_Hit>> CreateBatchOfHitsWithIons(int ResultSetId, int dataFileId, double FDR = 0.05)
+        {
+            var output = FilteredHits(ResultSetId, dataFileId, FDR).ToList();
 
             var outList = new Dictionary<int, Dictionary<int, SpectrumIdentificationItem_Hit>>();
 
@@ -572,7 +603,7 @@ namespace NRTDP.tdReportConverter
                 {
                     var hit = new SpectrumIdentificationItem_Hit
                     {
-                        GlobalQValue = hitscan.gqvalue,
+                        GlobalQValue = hitscan.GQValue,
                         BioId = new HashSet<int>() { hitscan.BioId },
                         ChemId = hitscan.ChemId,
                         IsoformId = new HashSet<int>() { hitscan.IsoformId },
@@ -580,9 +611,9 @@ namespace NRTDP.tdReportConverter
                         TheoPreMass = hitscan.TheoPreMass,
                         Scans = new HashSet<int>() { hitscan.ScanNo },
                         FragmentIons = fragmentMap[hitscan.HitId], //this.GetFragmentsforHit(hitscan.HitId),
-                        PScore = hitscan.pscore,
-                        CScore = hitscan.cscore,
-                        EValue = hitscan.escore,
+                        PScore = hitscan.PScore,
+                        CScore = hitscan.CScore,
+                        EValue = hitscan.EScore,
                         Cleavages = hitscan.Cleavages
                     };
 

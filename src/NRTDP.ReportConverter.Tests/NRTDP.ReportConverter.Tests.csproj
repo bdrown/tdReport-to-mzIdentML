@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The published PSI schema, unmodified; MzidSchemaValidator validates output against it. -->
+    <None Include="schema\mzIdentML1.1.0.xsd" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NRTDP.ReportConverter\NRTDP.tdReportConverter.csproj" />
   </ItemGroup>
 

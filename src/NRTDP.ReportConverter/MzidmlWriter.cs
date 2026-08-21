@@ -39,6 +39,73 @@ namespace NRTDP.tdReportConverter
         private static string AnalysisSoftwareId(IOpenTDReport db) => db.IsProSightPD ? "AS_ProSightPD" : "AS_TDPortal";
 
         /// <summary>
+        /// Writes one complete mzIdentML document from an already-open reader. The section order is
+        /// fixed by the schema, so all three entry points share it from here; it is internal so tests
+        /// can drive the writer from a stub <see cref="IOpenTDReport"/> rather than a real tdReport.
+        /// </summary>
+        /// <param name="inputFileInfo">Names the source report; only Name and FullName are read, so
+        /// the path does not have to exist.</param>
+        internal static void WriteDocument(IOpenTDReport db, Stream output, FileInfo inputFileInfo, double FDR, int? dataSetId, MzidMetadata? metadata = null)
+        {
+            // Leaves `output` open: XmlWriterSettings.CloseOutput defaults to false and the caller
+            // owns the stream.
+            using MzidmlWriter writer = new(output, Encoding.ASCII, metadata);
+            writer.WriteStartDoc();
+            writer.WriteMzIDStartElement(inputFileInfo.Name);
+            writer.WriteMzIDCVList();
+            writer.WriteAnalysisSoftwareList(db);
+            writer.WriteProviderAndAuditCollection();
+            writer.WriteSequenceCollection(db, FDR, dataSetId);
+            writer.WriteAnalysisCollection(db, FDR, dataSetId);
+            writer.WriteDataCollection(db, inputFileInfo, FDR, dataSetId);
+        }
+
+        /// <summary>
+        /// The result sets that will actually yield hits for <paramref name="dataSetId"/>, or across
+        /// every raw file when it is null.
+        ///
+        /// A SpectrumIdentificationList must hold at least one SpectrumIdentificationResult, but it
+        /// has to be declared - together with the SpectrumIdentification and
+        /// InputSpectrumIdentifications that reference it, both written earlier in the document -
+        /// before its results are streamed in. So result sets that will come back empty have to be
+        /// recognised up front and omitted from all three places; dropping only the list would leave
+        /// those two references dangling.
+        /// </summary>
+        internal static Dictionary<int, string> PopulatedResultSets(IOpenTDReport db, double FDR, int? dataSetId)
+        {
+            var rawFileIds = dataSetId.HasValue
+                ? new List<int> { dataSetId.Value }
+                : db.GetDataFiles().Keys.ToList();
+
+            return db.GetResultSets()
+                     .Where(resultSet => rawFileIds.Any(id => db.HasHits(resultSet.Key, id, FDR)))
+                     .ToDictionary(resultSet => resultSet.Key, resultSet => resultSet.Value);
+        }
+
+        // One writer instance writes exactly one document, for one dataSetId, so this cannot change
+        // between the AnalysisCollection and AnalysisData sections.
+        private Dictionary<int, string>? _populatedResultSets;
+
+        private Dictionary<int, string> GetPopulatedResultSets(IOpenTDReport db, double FDR, int? dataSetId) =>
+            _populatedResultSets ??= PopulatedResultSets(db, FDR, dataSetId);
+
+        /// <summary>
+        /// Whether a raw file identified anything at this FDR, reporting the skip when it did not.
+        ///
+        /// mzIdentML cannot express "this file was searched and nothing passed": both
+        /// SpectrumIdentification and SpectrumIdentificationList are minOccurs=1, so the only
+        /// alternatives are a valid document with results or no document at all.
+        /// </summary>
+        private static bool AnyIdentifications(IOpenTDReport db, double FDR, int dataSetId, string rawFileName)
+        {
+            if (PopulatedResultSets(db, FDR, dataSetId).Count > 0)
+                return true;
+
+            Console.WriteLine($"Skipping {rawFileName}: nothing identified at {FDR} FDR.");
+            return false;
+        }
+
+        /// <summary>
         /// Converts a tdReport into compressed mzidml files. One for each raw file in the tdReport.
         /// </summary>
         /// <param name="TDReport">The file path for the tdReport</param>
@@ -58,20 +125,19 @@ namespace NRTDP.tdReportConverter
             {
                 var rawFileName = dataset.Value.Item1;
 
+                if (!AnyIdentifications(_db, FDR, dataset.Key, rawFileName))
+                {
+                    count++;
+                    Console.WriteLine(count / datasets.Count());
+                    continue;
+                }
+
                 var outputPath = Path.Join(outputFolder, $"{Path.GetFileNameWithoutExtension(rawFileName)}.mzid.gz");
 
-                // Write the opening and short xml with a single stream 
+                // Write the opening and short xml with a single stream
                 using (FileStream stream = File.Create(tempFilePath))
-                using (MzidmlWriter writer = new(stream, Encoding.ASCII, metadata))
                 {
-                    writer.WriteStartDoc();
-                    writer.WriteMzIDStartElement(inputFileInfo.Name);
-                    writer.WriteMzIDCVList();
-                    writer.WriteAnalysisSoftwareList(_db);
-                    writer.WriteProviderAndAuditCollection();
-                    writer.WriteSequenceCollection(_db, FDR, dataset.Key);
-                    writer.WriteAnalysisCollection(_db, FDR, dataset.Key);
-                    writer.WriteDataCollection(_db, inputFileInfo, FDR, dataset.Key);
+                    WriteDocument(_db, stream, inputFileInfo, FDR, dataset.Key, metadata);
                 }
 
                 using (FileStream sourcefs = new FileStream(tempFilePath, FileMode.Open, FileAccess.Read))
@@ -117,17 +183,16 @@ namespace NRTDP.tdReportConverter
             var inputFileInfo = new FileInfo(TDReport);
             using var _db = TDReportVersionCheck(inputFileInfo.FullName, source);
 
+            // Unlike the per-raw-file entry points there is nothing to skip to, and an empty document
+            // would not be schema-valid, so fail rather than write one.
+            if (PopulatedResultSets(_db, FDR, null).Count == 0)
+                throw new InvalidOperationException(
+                    $"{inputFileInfo.Name} identified nothing at {FDR} FDR. mzIdentML requires at least " +
+                    "one SpectrumIdentificationList, so there is no valid document to write.");
+
             using (FileStream stream = File.Create(outputPath))
-            using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII, metadata))
             {
-                writer.WriteStartDoc();
-                writer.WriteMzIDStartElement(inputFileInfo.Name);
-                writer.WriteMzIDCVList();
-                writer.WriteAnalysisSoftwareList(_db);
-                writer.WriteProviderAndAuditCollection();
-                writer.WriteSequenceCollection(_db, FDR);
-                writer.WriteAnalysisCollection(_db, FDR);
-                writer.WriteDataCollection(_db, inputFileInfo, FDR);
+                WriteDocument(_db, stream, inputFileInfo, FDR, dataSetId: null, metadata);
             }
         }
 
@@ -149,19 +214,17 @@ namespace NRTDP.tdReportConverter
             {
                 var rawFileName = dataset.Value.Item1;
 
+                if (!AnyIdentifications(_db, FDR, dataset.Key, rawFileName))
+                {
+                    progress?.Report((double)++count / datasets.Count);
+                    continue;
+                }
+
                 var outputPath = Path.Join(outputFolder, $"{Path.GetFileNameWithoutExtension(rawFileName)}.mzid");
 
                 using (FileStream stream = File.Create(outputPath))
-                using (MzidmlWriter writer = new MzidmlWriter(stream, Encoding.ASCII, metadata))
                 {
-                    writer.WriteStartDoc();
-                    writer.WriteMzIDStartElement(inputFileInfo.Name);
-                    writer.WriteMzIDCVList();
-                    writer.WriteAnalysisSoftwareList(_db);
-                    writer.WriteProviderAndAuditCollection();
-                    writer.WriteSequenceCollection(_db, FDR, dataset.Key);
-                    writer.WriteAnalysisCollection(_db, FDR, dataset.Key);
-                    writer.WriteDataCollection(_db, inputFileInfo, FDR, dataset.Key);
+                    WriteDocument(_db, stream, inputFileInfo, FDR, dataset.Key, metadata);
                 }
                 progress?.Report((double)++count / datasets.Count);
             }
@@ -243,14 +306,16 @@ namespace NRTDP.tdReportConverter
         private void WriteAnalysisData(IOpenTDReport db, double FDR, int? dataSetId = null)
         {
             var rawFiles = db.GetDataFiles();
-            var resultSets = db.GetResultSets();
+            // Must match the result sets WriteAnalysisCollection announced, or its
+            // spectrumIdentificationList_ref attributes point at lists that were never written.
+            var populatedResultSets = this.GetPopulatedResultSets(db, FDR, dataSetId);
 
             if (dataSetId.HasValue)
             {
                 this.WriteStartElement("AnalysisData");
                 // hitId -> scans: a hit can match multiple scans, so SII ids and their refs include the scan.
                 var hitScans = new Dictionary<int, List<int>>();
-                foreach (var resultSet in resultSets)
+                foreach (var resultSet in populatedResultSets)
                 {
                     //Write  SpectrumIdentificationList
                     this.WriteStartElement("SpectrumIdentificationList");
@@ -356,9 +421,11 @@ namespace NRTDP.tdReportConverter
                 }
 
                 // Single ProteinDetectionList spanning all result sets (schema allows only one).
+                // A result set with no hits has no protein hypotheses either, and its SII ids were
+                // never written for SpectrumIdentificationItemRef to point at, so skip the query.
                 this.WriteStartElement("ProteinDetectionList");
                 this.WriteAttributeString("id", "PDL_1");
-                foreach (var resultSet in resultSets)
+                foreach (var resultSet in populatedResultSets)
                 {
                     var isoforms = db.GetproteinDetectiondata(resultSet.Key, dataSetId.Value, FDR);
                     foreach (var isoform in isoforms)
@@ -405,7 +472,7 @@ namespace NRTDP.tdReportConverter
                 this.WriteStartElement("AnalysisData");
                 // hitId -> scans: a hit can match multiple scans, so SII ids and their refs include the scan.
                 var hitScans = new Dictionary<int, List<int>>();
-                foreach (var resultSet in resultSets)
+                foreach (var resultSet in populatedResultSets)
                 {
                     //Write  SpectrumIdentificationList
                     this.WriteStartElement("SpectrumIdentificationList");
@@ -519,9 +586,11 @@ namespace NRTDP.tdReportConverter
                 }
 
                 // Single ProteinDetectionList spanning all result sets (schema allows only one).
+                // A result set with no hits has no protein hypotheses either, and its SII ids were
+                // never written for SpectrumIdentificationItemRef to point at, so skip the query.
                 this.WriteStartElement("ProteinDetectionList");
                 this.WriteAttributeString("id", "PDL_1");
-                foreach (var resultSet in resultSets)
+                foreach (var resultSet in populatedResultSets)
                 {
                     foreach (var rawfile in rawFiles)
                     {
@@ -721,8 +790,11 @@ namespace NRTDP.tdReportConverter
             var rawFiles = db.GetDataFiles();
             var resultSets = db.GetResultSets();
             var massTable = db.GetMassTable();
+            // Only the result sets that produce hits: each SpectrumIdentification here points at a
+            // SpectrumIdentificationList that WriteAnalysisData has to fill with at least one result.
+            var populatedResultSets = this.GetPopulatedResultSets(db, FDR, dataFileId);
             this.WriteStartElement("AnalysisCollection");
-            foreach (var ResultSet in resultSets)
+            foreach (var ResultSet in populatedResultSets)
             {
                 //one for each result set?
 
@@ -757,12 +829,12 @@ namespace NRTDP.tdReportConverter
                 this.WriteEndElement();
             }
 
-            // Single ProteinDetection (schema allows one); reference every result set's SIL.
+            // Single ProteinDetection (schema allows one); reference every SIL that gets written.
             this.WriteStartElement("ProteinDetection");
             this.WriteAttributeString("id", "PD_1");
             this.WriteAttributeString("proteinDetectionProtocol_ref", "PDP_1");
             this.WriteAttributeString("proteinDetectionList_ref", "PDL_1");
-            foreach (var ResultSet in resultSets)
+            foreach (var ResultSet in populatedResultSets)
             {
                 this.WriteStartElement("InputSpectrumIdentifications");
                 this.WriteAttributeString("spectrumIdentificationList_ref", $"SIL_{ResultSet.Key}");
@@ -776,7 +848,9 @@ namespace NRTDP.tdReportConverter
             this.WriteStartElement("AnalysisProtocolCollection");
 
             var parameters = db.GetParameters();
-            //forEach SIP
+            // Deliberately every result set, not just the populated ones: a protocol records a search
+            // that was run, which stays true when that search happened to identify nothing here. The
+            // schema is happy with a protocol no SpectrumIdentification references.
             foreach (var ResultSet in resultSets)
             {
                 this.WriteStartElement("SpectrumIdentificationProtocol");

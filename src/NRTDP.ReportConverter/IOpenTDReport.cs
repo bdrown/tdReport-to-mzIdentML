@@ -40,6 +40,15 @@ namespace NRTDP.tdReportConverter
 
         Dictionary<int, Dictionary<int, SpectrumIdentificationItem_Hit>> CreateBatchOfHitsWithIons(int ResultSetId, int dataFileId, double FDR = 0.05);
 
+        /// <summary>
+        /// Whether <see cref="CreateBatchOfHitsWithIons"/> would return anything for this result set
+        /// and raw file. The writer has to declare a SpectrumIdentificationList - and the
+        /// SpectrumIdentification that references it - before it streams results into it, so it needs
+        /// to know up front which result sets will actually produce hits: the schema requires at
+        /// least one SpectrumIdentificationResult per list.
+        /// </summary>
+        bool HasHits(int ResultSetId, int dataFileId, double FDR = 0.05);
+
             Dictionary<int, Dictionary<int, ProteinAmbiguityGroup>> GetproteinDetectiondata(int ResultSetId, int dataFileId, double FDR = 0.05);
     }
 }
