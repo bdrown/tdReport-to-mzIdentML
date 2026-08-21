@@ -90,6 +90,46 @@ namespace NRTDP.tdReportConverter
             _populatedResultSets ??= PopulatedResultSets(db, FDR, dataSetId);
 
         /// <summary>
+        /// Writes to a sibling .partial file and renames it into place once the document is complete.
+        ///
+        /// This is what lets skipExisting trust the output folder: a run killed mid-write - by a
+        /// crash, a Ctrl-C, or a reboot for an update - leaves a truncated .partial rather than a
+        /// truncated .mzid, so a file at <paramref name="outputPath"/> is always a whole document and
+        /// is always safe to skip. Without it, resuming would silently keep exactly the one broken
+        /// file the interruption produced.
+        /// </summary>
+        internal static void WriteAtomically(string outputPath, Action<Stream> writeContent)
+        {
+            var partialPath = outputPath + ".partial";
+            try
+            {
+                using (FileStream stream = File.Create(partialPath))
+                {
+                    writeContent(stream);
+                }
+
+                File.Move(partialPath, outputPath, overwrite: true);
+            }
+            catch
+            {
+                // Best effort: a leftover .partial is inert, and losing the original failure to a
+                // cleanup error would be worse.
+                try { File.Delete(partialPath); } catch { }
+                throw;
+            }
+        }
+
+        /// <summary>Whether this raw file's output already exists and should be left alone.</summary>
+        private static bool AlreadyConverted(bool skipExisting, string outputPath, string rawFileName)
+        {
+            if (!skipExisting || !File.Exists(outputPath))
+                return false;
+
+            Console.WriteLine($"Skipping {rawFileName}: {Path.GetFileName(outputPath)} already exists.");
+            return true;
+        }
+
+        /// <summary>
         /// Whether a raw file identified anything at this FDR, reporting the skip when it did not.
         ///
         /// mzIdentML cannot express "this file was searched and nothing passed": both
@@ -111,7 +151,9 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output folder for the compressed mzidml files</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSeperateCompressedMzId(string TDReport, string outputFolder, double FDR = 0.05, MzidMetadata? metadata = null, ReportSource source = ReportSource.Auto)
+        /// <param name="skipExisting">Leave raw files whose .mzid.gz is already present alone, so an
+        /// interrupted run can be resumed without redoing completed files.</param>
+        public static void ConvertToSeperateCompressedMzId(string TDReport, string outputFolder, double FDR = 0.05, MzidMetadata? metadata = null, ReportSource source = ReportSource.Auto, bool skipExisting = false)
         {
             string tempFilePath = Path.GetTempFileName();
 
@@ -124,48 +166,31 @@ namespace NRTDP.tdReportConverter
             foreach (var dataset in datasets)
             {
                 var rawFileName = dataset.Value.Item1;
+                var outputPath = Path.Join(outputFolder, $"{Path.GetFileNameWithoutExtension(rawFileName)}.mzid.gz");
 
-                if (!AnyIdentifications(_db, FDR, dataset.Key, rawFileName))
+                // Checked before AnyIdentifications so a resumed run does no database work for the
+                // files it is going to skip.
+                if (AlreadyConverted(skipExisting, outputPath, rawFileName)
+                    || !AnyIdentifications(_db, FDR, dataset.Key, rawFileName))
                 {
                     count++;
                     Console.WriteLine(count / datasets.Count());
                     continue;
                 }
 
-                var outputPath = Path.Join(outputFolder, $"{Path.GetFileNameWithoutExtension(rawFileName)}.mzid.gz");
-
-                // Write the opening and short xml with a single stream
+                // Write the document uncompressed first; gzip cannot be written before the content
+                // it wraps is known.
                 using (FileStream stream = File.Create(tempFilePath))
                 {
                     WriteDocument(_db, stream, inputFileInfo, FDR, dataset.Key, metadata);
                 }
 
-                using (FileStream sourcefs = new FileStream(tempFilePath, FileMode.Open, FileAccess.Read))
-                using (FileStream fs = new FileStream(outputPath, FileMode.Create))
+                WriteAtomically(outputPath, output =>
                 {
-                    byte[] bytes = new byte[sourcefs.Length];
-                    int numBytesToRead = (int)sourcefs.Length;
-                    int numBytesRead = 0;
-                    while (numBytesToRead > 0)
-                    {
-                        // Read may return anything from 0 to numBytesToRead.
-                        int n = sourcefs.Read(bytes, numBytesRead, numBytesToRead);
-
-                        // Break when the end of the file is reached.
-                        if (n == 0)
-                            break;
-
-                        numBytesRead += n;
-                        numBytesToRead -= n;
-                    }
-                    numBytesToRead = bytes.Length;
-
-                    using (var compressionStream = new GZipStream(fs, CompressionMode.Compress))
-                    {
-                        compressionStream.Write(bytes, 0, bytes.Length);
-                        compressionStream.Flush();
-                    }
-                }
+                    using FileStream sourcefs = File.OpenRead(tempFilePath);
+                    using var compressionStream = new GZipStream(output, CompressionMode.Compress);
+                    sourcefs.CopyTo(compressionStream);
+                });
 
                 File.Delete(tempFilePath);
                 count++;
@@ -202,7 +227,9 @@ namespace NRTDP.tdReportConverter
         /// <param name="TDReport">The file path for the tdReport</param>
         /// <param name="outputFolder">The output folder for the compressed mzidml files</param>
         /// <param name="FDR">The False Discovery Rate (FDR) used to filter the results</param>
-        public static void ConvertToSeperateMzId(string TDReport, string outputFolder, double FDR = 0.05, IProgress<double>? progress = null, MzidMetadata? metadata = null, ReportSource source = ReportSource.Auto)
+        /// <param name="skipExisting">Leave raw files whose .mzid is already present alone, so an
+        /// interrupted run can be resumed without redoing completed files.</param>
+        public static void ConvertToSeperateMzId(string TDReport, string outputFolder, double FDR = 0.05, IProgress<double>? progress = null, MzidMetadata? metadata = null, ReportSource source = ReportSource.Auto, bool skipExisting = false)
         {
             var inputFileInfo = new FileInfo(TDReport);
 
@@ -213,19 +240,18 @@ namespace NRTDP.tdReportConverter
             foreach (var dataset in datasets)
             {
                 var rawFileName = dataset.Value.Item1;
+                var outputPath = Path.Join(outputFolder, $"{Path.GetFileNameWithoutExtension(rawFileName)}.mzid");
 
-                if (!AnyIdentifications(_db, FDR, dataset.Key, rawFileName))
+                // Checked before AnyIdentifications so a resumed run does no database work for the
+                // files it is going to skip.
+                if (AlreadyConverted(skipExisting, outputPath, rawFileName)
+                    || !AnyIdentifications(_db, FDR, dataset.Key, rawFileName))
                 {
                     progress?.Report((double)++count / datasets.Count);
                     continue;
                 }
 
-                var outputPath = Path.Join(outputFolder, $"{Path.GetFileNameWithoutExtension(rawFileName)}.mzid");
-
-                using (FileStream stream = File.Create(outputPath))
-                {
-                    WriteDocument(_db, stream, inputFileInfo, FDR, dataset.Key, metadata);
-                }
+                WriteAtomically(outputPath, stream => WriteDocument(_db, stream, inputFileInfo, FDR, dataset.Key, metadata));
                 progress?.Report((double)++count / datasets.Count);
             }
         }

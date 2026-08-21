@@ -41,6 +41,14 @@ namespace NRTDP.tdReportConverter.ConsoleApp
             };
             metadataOption.AcceptExistingOnly();
 
+            var skipExistingOption = new Option<bool>("--skip-existing")
+            {
+                Description = "Leave raw files whose .mzid is already in the output folder alone, so "
+                            + "an interrupted run can be resumed without redoing finished files. "
+                            + "Output is written to a .partial file and renamed once complete, so a "
+                            + "file that is present is always a whole document.",
+            };
+
             var sourceOption = new Option<string>("--source")
             {
                 Description = "Which software produced the report. 'auto' infers it from the report's "
@@ -58,6 +66,7 @@ namespace NRTDP.tdReportConverter.ConsoleApp
                 fdrOption,
                 metadataOption,
                 sourceOption,
+                skipExistingOption,
             };
 
             root.SetAction(parseResult =>
@@ -66,6 +75,7 @@ namespace NRTDP.tdReportConverter.ConsoleApp
                 var outputFolder = parseResult.GetValue(outputFolderArgument);
                 var fdr = parseResult.GetValue(fdrOption);
                 var metadata = parseResult.GetValue(metadataOption);
+                var skipExisting = parseResult.GetValue(skipExistingOption);
                 var source = parseResult.GetValue(sourceOption) switch
                 {
                     "tdportal" => ReportSource.TDPortal,
@@ -80,7 +90,8 @@ namespace NRTDP.tdReportConverter.ConsoleApp
                     Directory.CreateDirectory(outputPath);
                     var progress = new Progress<double>(pct => Console.WriteLine($"{(pct * 100):N2}"));
                     MzidmlWriter.ConvertToSeperateMzId(tdReport.FullName, outputPath, fdr, progress,
-                                                       MzidMetadata.Load(metadata?.FullName), source);
+                                                       MzidMetadata.Load(metadata?.FullName), source,
+                                                       skipExisting);
                     return 0;
                 }
                 catch (Exception ex)
