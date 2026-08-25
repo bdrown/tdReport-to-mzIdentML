@@ -16,6 +16,9 @@ internal sealed class StubTdReport : IOpenTDReport
     public const int ChemId = 1;
     public const int HitId = 900;
     public const int ScanNumber = 4343;
+
+    /// <summary>A hit the protein query reports but the hits query never returned.</summary>
+    public const int UnmatchedHitId = 901;
     private const string ProteinSequence = "MKSLVLLLCLAQLWGCHSAPHGPGLIYR";
 
     private readonly Dictionary<int, string> _resultSets;
@@ -40,6 +43,17 @@ internal sealed class StubTdReport : IOpenTDReport
 
     /// <summary>Neither search identified anything at this FDR.</summary>
     public static StubTdReport NothingIdentified() => new(TwoSearches());
+
+    /// <summary>
+    /// Protein data naming a hit that has no SpectrumIdentificationItem. The real readers do this:
+    /// GetproteinDetectiondata has neither the MS2-scan restriction nor the inner joins on HitScore
+    /// that the hits query applies, so it can return a hit the hits query filtered out.
+    /// </summary>
+    public static StubTdReport ProteinDataForUnmatchedHit() =>
+        new(TwoSearches(), 2) { ProteinDataNamesUnmatchedHit = true };
+
+    /// <summary>See <see cref="ProteinDataForUnmatchedHit"/>.</summary>
+    public bool ProteinDataNamesUnmatchedHit { get; init; }
 
     public bool IsProSightPD => false;
     public string? SoftwareVersion => "4.0.0.81";
@@ -97,7 +111,9 @@ internal sealed class StubTdReport : IOpenTDReport
 
         var group = new ProteinAmbiguityGroup
         {
-            HitId = new HashSet<int> { HitId },
+            HitId = ProteinDataNamesUnmatchedHit
+                ? new HashSet<int> { UnmatchedHitId }
+                : new HashSet<int> { HitId },
             ChemId = ChemId,
             BioId = new HashSet<int> { 1 },
             IsoformId = IsoformId,

@@ -45,11 +45,14 @@ namespace NRTDP.tdReportConverter
         /// </summary>
         /// <param name="inputFileInfo">Names the source report; only Name and FullName are read, so
         /// the path does not have to exist.</param>
-        internal static void WriteDocument(IOpenTDReport db, Stream output, FileInfo inputFileInfo, double FDR, int? dataSetId, MzidMetadata? metadata = null)
+        /// <param name="populatedResultSets">Precomputed result of <see cref="PopulatedResultSets"/>
+        /// when the caller has already established it; computed on demand when null.</param>
+        internal static void WriteDocument(IOpenTDReport db, Stream output, FileInfo inputFileInfo, double FDR, int? dataSetId, MzidMetadata? metadata = null, Dictionary<int, string>? populatedResultSets = null)
         {
             // Leaves `output` open: XmlWriterSettings.CloseOutput defaults to false and the caller
             // owns the stream.
             using MzidmlWriter writer = new(output, Encoding.ASCII, metadata);
+            writer._populatedResultSets = populatedResultSets;
             writer.WriteStartDoc();
             writer.WriteMzIDStartElement(inputFileInfo.Name);
             writer.WriteMzIDCVList();
@@ -119,6 +122,14 @@ namespace NRTDP.tdReportConverter
             }
         }
 
+        /// <summary>A scratch file that is removed when the conversion ends, however it ends.</summary>
+        private sealed class ScratchFile : IDisposable
+        {
+            public string Path { get; } = System.IO.Path.GetTempFileName();
+
+            public void Dispose() => File.Delete(Path);
+        }
+
         /// <summary>Whether this raw file's output already exists and should be left alone.</summary>
         private static bool AlreadyConverted(bool skipExisting, string outputPath, string rawFileName)
         {
@@ -130,19 +141,48 @@ namespace NRTDP.tdReportConverter
         }
 
         /// <summary>
-        /// Whether a raw file identified anything at this FDR, reporting the skip when it did not.
+        /// The result sets to write for this raw file, or null when it identified nothing.
         ///
         /// mzIdentML cannot express "this file was searched and nothing passed": both
         /// SpectrumIdentification and SpectrumIdentificationList are minOccurs=1, so the only
-        /// alternatives are a valid document with results or no document at all.
+        /// alternatives are a valid document with results or no document at all. The answer is
+        /// handed to WriteDocument rather than recomputed there, since establishing it costs one
+        /// existence query per result set.
         /// </summary>
-        private static bool AnyIdentifications(IOpenTDReport db, double FDR, int dataSetId, string rawFileName)
+        private static Dictionary<int, string>? ResultSetsToWrite(IOpenTDReport db, double FDR, int dataSetId, string rawFileName)
         {
-            if (PopulatedResultSets(db, FDR, dataSetId).Count > 0)
-                return true;
+            var populated = PopulatedResultSets(db, FDR, dataSetId);
+            if (populated.Count > 0)
+                return populated;
 
             Console.WriteLine($"Skipping {rawFileName}: nothing identified at {FDR} FDR.");
-            return false;
+            return null;
+        }
+
+        /// <summary>
+        /// Refuses a report in which two raw files would be written to the same output name.
+        ///
+        /// Output names come from the raw file's base name, so two raw files differing only by
+        /// directory map to one path: without skipExisting the second silently replaces the first,
+        /// with it the second is skipped outright. Either way a set of identifications goes missing
+        /// while the run reports success, so this is refused up front instead.
+        /// </summary>
+        private static void GuardAgainstDuplicateOutputNames(Dictionary<int, Tuple<string, string>> datasets, string extension)
+        {
+            var collisions = datasets.Values
+                .GroupBy(d => Path.GetFileNameWithoutExtension(d.Item1) + extension, StringComparer.OrdinalIgnoreCase)
+                .Where(byName => byName.Count() > 1)
+                .ToList();
+
+            if (collisions.Count == 0)
+                return;
+
+            var detail = string.Join("; ", collisions.Select(
+                byName => $"{byName.Key} <- {string.Join(", ", byName.Select(d => d.Item2))}"));
+
+            throw new InvalidOperationException(
+                $"Two or more raw files would be written to the same output name, which would lose "
+                + $"identifications: {detail}");
         }
 
         /// <summary>
@@ -155,23 +195,34 @@ namespace NRTDP.tdReportConverter
         /// interrupted run can be resumed without redoing completed files.</param>
         public static void ConvertToSeperateCompressedMzId(string TDReport, string outputFolder, double FDR = 0.05, MzidMetadata? metadata = null, ReportSource source = ReportSource.Auto, bool skipExisting = false)
         {
-            string tempFilePath = Path.GetTempFileName();
+            // Reused and truncated by every iteration, and removed however the conversion ends -
+            // including when every dataset is skipped, which no longer reaches a delete in the loop.
+            using var tempFile = new ScratchFile();
 
             var inputFileInfo = new FileInfo(TDReport);
 
             using var _db = TDReportVersionCheck(inputFileInfo.FullName, source);
 
             var datasets = _db.GetDataFiles();
+            GuardAgainstDuplicateOutputNames(datasets, ".mzid.gz");
+
             double count = 0.0;
             foreach (var dataset in datasets)
             {
                 var rawFileName = dataset.Value.Item1;
                 var outputPath = Path.Join(outputFolder, $"{Path.GetFileNameWithoutExtension(rawFileName)}.mzid.gz");
 
-                // Checked before AnyIdentifications so a resumed run does no database work for the
+                // Checked before ResultSetsToWrite so a resumed run does no database work for the
                 // files it is going to skip.
-                if (AlreadyConverted(skipExisting, outputPath, rawFileName)
-                    || !AnyIdentifications(_db, FDR, dataset.Key, rawFileName))
+                if (AlreadyConverted(skipExisting, outputPath, rawFileName))
+                {
+                    count++;
+                    Console.WriteLine(count / datasets.Count());
+                    continue;
+                }
+
+                var populatedResultSets = ResultSetsToWrite(_db, FDR, dataset.Key, rawFileName);
+                if (populatedResultSets is null)
                 {
                     count++;
                     Console.WriteLine(count / datasets.Count());
@@ -180,19 +231,18 @@ namespace NRTDP.tdReportConverter
 
                 // Write the document uncompressed first; gzip cannot be written before the content
                 // it wraps is known.
-                using (FileStream stream = File.Create(tempFilePath))
+                using (FileStream stream = File.Create(tempFile.Path))
                 {
-                    WriteDocument(_db, stream, inputFileInfo, FDR, dataset.Key, metadata);
+                    WriteDocument(_db, stream, inputFileInfo, FDR, dataset.Key, metadata, populatedResultSets);
                 }
 
                 WriteAtomically(outputPath, output =>
                 {
-                    using FileStream sourcefs = File.OpenRead(tempFilePath);
+                    using FileStream sourcefs = File.OpenRead(tempFile.Path);
                     using var compressionStream = new GZipStream(output, CompressionMode.Compress);
                     sourcefs.CopyTo(compressionStream);
                 });
 
-                File.Delete(tempFilePath);
                 count++;
                 Console.WriteLine(count / datasets.Count());
             }
@@ -236,22 +286,31 @@ namespace NRTDP.tdReportConverter
             using var _db = TDReportVersionCheck(inputFileInfo.FullName, source);
 
             var datasets = _db.GetDataFiles();
+            GuardAgainstDuplicateOutputNames(datasets, ".mzid");
+
             int count = 0;
             foreach (var dataset in datasets)
             {
                 var rawFileName = dataset.Value.Item1;
                 var outputPath = Path.Join(outputFolder, $"{Path.GetFileNameWithoutExtension(rawFileName)}.mzid");
 
-                // Checked before AnyIdentifications so a resumed run does no database work for the
+                // Checked before ResultSetsToWrite so a resumed run does no database work for the
                 // files it is going to skip.
-                if (AlreadyConverted(skipExisting, outputPath, rawFileName)
-                    || !AnyIdentifications(_db, FDR, dataset.Key, rawFileName))
+                if (AlreadyConverted(skipExisting, outputPath, rawFileName))
                 {
                     progress?.Report((double)++count / datasets.Count);
                     continue;
                 }
 
-                WriteAtomically(outputPath, stream => WriteDocument(_db, stream, inputFileInfo, FDR, dataset.Key, metadata));
+                var populatedResultSets = ResultSetsToWrite(_db, FDR, dataset.Key, rawFileName);
+                if (populatedResultSets is null)
+                {
+                    progress?.Report((double)++count / datasets.Count);
+                    continue;
+                }
+
+                WriteAtomically(outputPath, stream =>
+                    WriteDocument(_db, stream, inputFileInfo, FDR, dataset.Key, metadata, populatedResultSets));
                 progress?.Report((double)++count / datasets.Count);
             }
         }
@@ -454,40 +513,7 @@ namespace NRTDP.tdReportConverter
                 foreach (var resultSet in populatedResultSets)
                 {
                     var isoforms = db.GetproteinDetectiondata(resultSet.Key, dataSetId.Value, FDR);
-                    foreach (var isoform in isoforms)
-                    {
-                        //start ProteinAmbiguityGroup
-                        this.WriteStartElement("ProteinAmbiguityGroup");
-                        this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSet.Key}_{dataSetId.Value}");
-                        this.WriteStartElement("ProteinDetectionHypothesis");
-                        this.WriteAttributeString("id", $"PDH_{isoform.Key}_{resultSet.Key}_{dataSetId.Value}");
-                        this.WriteAttributeString("dBSequence_ref", $"ISO_{isoform.Key}");
-                        this.WriteAttributeString("passThreshold", $"true");
-
-                        foreach (var chem in isoforms[isoform.Key])
-                        {
-                            this.WriteStartElement("PeptideHypothesis");
-                            this.WriteAttributeString("peptideEvidence_ref", $"PE_Chem_{chem.Key}_ISO_{isoform.Key}");
-                            foreach (var hit in chem.Value.HitId)
-                            {
-                                if (!hitScans.TryGetValue(hit, out var scansForHit)) continue;
-                                foreach (var scanNo in scansForHit)
-                                {
-                                    this.WriteStartElement("SpectrumIdentificationItemRef");
-                                    this.WriteAttributeString("spectrumIdentificationItem_ref", $"SII_Hit_{hit}_{scanNo}_{resultSet.Key}_{dataSetId.Value}");
-                                    this.WriteEndElement();
-                                }
-                            }
-
-                            this.WriteEndElement();
-                        }
-
-                        this.WriteCVParam("MS:1003134", "ProSight:isoform Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.IsoformGlobalQvalue));
-                        this.WriteCVParam("MS:1003135", "ProSight:protein Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.EntryGlobalQValue));
-
-                        this.WriteEndElement();
-                        this.WriteEndElement();
-                    }
+                    this.WriteProteinAmbiguityGroups(isoforms, hitScans, resultSet.Key, dataSetId.Value);
                 }
                 this.WriteEndElement(); // end ProteinDetectionList
 
@@ -621,48 +647,133 @@ namespace NRTDP.tdReportConverter
                     foreach (var rawfile in rawFiles)
                     {
                         var isoforms = db.GetproteinDetectiondata(resultSet.Key, rawfile.Key, FDR);
-                        foreach (var isoform in isoforms)
-                        {
-                            //start ProteinAmbiguityGroup
-                            this.WriteStartElement("ProteinAmbiguityGroup");
-                            this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSet.Key}_{rawfile.Key}");
-                            this.WriteStartElement("ProteinDetectionHypothesis");
-                            this.WriteAttributeString("id", $"PDH_{isoform.Key}_{resultSet.Key}_{rawfile.Key}");
-                            this.WriteAttributeString("dBSequence_ref", $"ISO_{isoform.Key}");
-                            this.WriteAttributeString("passThreshold", $"true");
-
-
-                            foreach (var chem in isoforms[isoform.Key])
-                            {
-                                this.WriteStartElement("PeptideHypothesis");
-                                this.WriteAttributeString("peptideEvidence_ref", $"PE_Chem_{chem.Key}_ISO_{isoform.Key}");
-                                foreach (var hit in chem.Value.HitId)
-                                {
-                                    if (!hitScans.TryGetValue(hit, out var scansForHit)) continue;
-                                    foreach (var scanNo in scansForHit)
-                                    {
-                                        this.WriteStartElement("SpectrumIdentificationItemRef");
-                                        this.WriteAttributeString("spectrumIdentificationItem_ref", $"SII_Hit_{hit}_{scanNo}_{resultSet.Key}_{rawfile.Key}");
-                                        this.WriteEndElement();
-                                    }
-                                }
-
-                                this.WriteEndElement();
-
-                            }
-
-                            this.WriteCVParam("MS:1003134", "ProSight:isoform Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.IsoformGlobalQvalue));
-                            this.WriteCVParam("MS:1003135", "ProSight:protein Q-value", String.Format("{0:e4}", isoforms[isoform.Key].FirstOrDefault().Value.EntryGlobalQValue));
-
-                            this.WriteEndElement();
-                            this.WriteEndElement();
-                        }
+                        this.WriteProteinAmbiguityGroups(isoforms, hitScans, resultSet.Key, rawfile.Key);
                     }
                 }
                 this.WriteEndElement(); // end ProteinDetectionList
 
                 this.WriteEndElement();
             }
+        }
+
+        /// <summary>
+        /// Writes the ProteinAmbiguityGroups for one result set / raw file pair, leaving out anything
+        /// the schema would reject as empty.
+        ///
+        /// GetproteinDetectiondata and the hits query do not filter identically - the protein query
+        /// has neither the MS2-scan restriction nor the inner joins on HitScore - so it can return a
+        /// hit that never received a SpectrumIdentificationItem to point at. PeptideHypothesis
+        /// requires at least one SpectrumIdentificationItemRef, ProteinDetectionHypothesis at least
+        /// one PeptideHypothesis, and ProteinAmbiguityGroup at least one of those, so dropping an
+        /// unreferenced hit means dropping whatever it would leave empty above it.
+        /// </summary>
+        private void WriteProteinAmbiguityGroups(
+            Dictionary<int, Dictionary<int, ProteinAmbiguityGroup>> isoforms,
+            Dictionary<int, List<int>> hitScans,
+            int resultSetId,
+            int dataFileId)
+        {
+            foreach (var isoform in isoforms)
+            {
+                // Resolve the references first: whether any survive decides whether the enclosing
+                // elements may be written at all.
+                var refsByChem = new Dictionary<int, List<string>>();
+                foreach (var chem in isoform.Value)
+                {
+                    var refs = new List<string>();
+                    foreach (var hit in chem.Value.HitId)
+                    {
+                        if (!hitScans.TryGetValue(hit, out var scansForHit)) continue;
+                        foreach (var scanNo in scansForHit)
+                            refs.Add($"SII_Hit_{hit}_{scanNo}_{resultSetId}_{dataFileId}");
+                    }
+
+                    if (refs.Count > 0)
+                        refsByChem[chem.Key] = refs;
+                }
+
+                if (refsByChem.Count == 0)
+                    continue;
+
+                //start ProteinAmbiguityGroup
+                this.WriteStartElement("ProteinAmbiguityGroup");
+                this.WriteAttributeString("id", $"PAG_{isoform.Key}_{resultSetId}_{dataFileId}");
+                this.WriteStartElement("ProteinDetectionHypothesis");
+                this.WriteAttributeString("id", $"PDH_{isoform.Key}_{resultSetId}_{dataFileId}");
+                this.WriteAttributeString("dBSequence_ref", $"ISO_{isoform.Key}");
+                this.WriteAttributeString("passThreshold", $"true");
+
+                foreach (var chem in refsByChem)
+                {
+                    this.WriteStartElement("PeptideHypothesis");
+                    this.WriteAttributeString("peptideEvidence_ref", $"PE_Chem_{chem.Key}_ISO_{isoform.Key}");
+                    foreach (var itemRef in chem.Value)
+                    {
+                        this.WriteStartElement("SpectrumIdentificationItemRef");
+                        this.WriteAttributeString("spectrumIdentificationItem_ref", itemRef);
+                        this.WriteEndElement();
+                    }
+                    this.WriteEndElement();
+                }
+
+                // Both Q-values are protein-level, so any entry for this isoform carries the same pair.
+                var proteinScores = isoform.Value.First().Value;
+                this.WriteCVParam("MS:1003134", "ProSight:isoform Q-value", String.Format("{0:e4}", proteinScores.IsoformGlobalQvalue));
+                this.WriteCVParam("MS:1003135", "ProSight:protein Q-value", String.Format("{0:e4}", proteinScores.EntryGlobalQValue));
+
+                this.WriteEndElement(); //end ProteinDetectionHypothesis
+                this.WriteEndElement(); //end ProteinAmbiguityGroup
+            }
+        }
+
+        /// <summary>
+        /// Writes the plus/minus pair for a FragmentTolerance or ParentTolerance element.
+        ///
+        /// ToleranceType requires at least one cvParam, so every case has to produce a pair. A value
+        /// may be absent (ProSight PD stores no search parameters) or carry a unit this does not
+        /// recognise; both fall back to -1 dalton, the convention already used for "not recorded".
+        /// </summary>
+        /// <summary>
+        /// Whether a modification can be represented at all.
+        ///
+        /// Modification requires at least one cvParam and every cvParam requires a cvRef naming a
+        /// declared cv, so a modification whose set id is missing has no valid form - emitting
+        /// cvRef="" would only move the failure into the document. The set id is nullable
+        /// independently of the mod id (it comes from a separate column), so checking the id alone
+        /// is not enough. Reported rather than dropped quietly, since it means unexpected data.
+        /// </summary>
+        private static bool CanWriteModification(int? modId, string? modSetId, string context)
+        {
+            if (modId is null)
+                return false;
+
+            if (!string.IsNullOrEmpty(modSetId))
+                return true;
+
+            Console.WriteLine($"Skipping {context} modification {modId}: no modification set id, so it has no CV reference.");
+            return false;
+        }
+
+        private void WriteToleranceParams(string? tolerance)
+        {
+            var text = (tolerance ?? "").Trim();
+
+            if (text.EndsWith("ppm") && double.TryParse(text[..^3].Trim(), out var ppm))
+            {
+                this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ppm}", "UO", "UO:0000169", "parts per million");
+                this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ppm}", "UO", "UO:0000169", "parts per million");
+                return;
+            }
+
+            if (text.EndsWith("Da") && double.TryParse(text[..^2].Trim(), out var dalton))
+            {
+                this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{dalton}", "UO", "UO:0000221", "dalton");
+                this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{dalton}", "UO", "UO:0000221", "dalton");
+                return;
+            }
+
+            this.WriteCVParam("MS:1001412", "search tolerance plus value", "-1", "UO", "UO:0000221", "dalton");
+            this.WriteCVParam("MS:1001413", "search tolerance minus value", "-1", "UO", "UO:0000221", "dalton");
         }
 
         private void WriteFragType(string fragType)
@@ -950,55 +1061,11 @@ namespace NRTDP.tdReportConverter
                 this.WriteEndElement();
 
                 this.WriteStartElement("FragmentTolerance");
-
-                // ProSight PD has no fragment_tolerance (empty ResultParameter); guard + emit -1 like the precursor block below.
-                if (ResultSetParameters.ContainsKey("fragment_tolerance"))
-                {
-                    if (ResultSetParameters["fragment_tolerance"].TrimEnd(null).EndsWith("ppm"))
-                    {
-                        var tol = Double.Parse(ResultSetParameters["fragment_tolerance"].Remove(ResultSetParameters["fragment_tolerance"].IndexOf('p'), 3));
-                        this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
-                        this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
-                    }
-                    else if (ResultSetParameters["fragment_tolerance"].TrimEnd(null).EndsWith("Da"))
-                    {
-                        var tol = Double.Parse(ResultSetParameters["fragment_tolerance"].Remove(ResultSetParameters["fragment_tolerance"].LastIndexOf('D'), 2));
-                        this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000221", "dalton");
-                        this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000221", "dalton");
-                    }
-                }
-                else
-                {
-                    this.WriteCVParam("MS:1001412", "search tolerance plus value", $"-1", "UO", "UO:0000221", "dalton");
-                    this.WriteCVParam("MS:1001413", "search tolerance minus value", $"-1", "UO", "UO:0000221", "dalton");
-                }
-
+                this.WriteToleranceParams(ResultSetParameters.GetValueOrDefault("fragment_tolerance"));
                 this.WriteEndElement();
 
-
                 this.WriteStartElement("ParentTolerance");
-                if (ResultSetParameters.ContainsKey("precursor_window_tolerance"))
-                {
-                    if (ResultSetParameters["precursor_window_tolerance"].TrimEnd(null).EndsWith("ppm"))
-                    {
-
-                        var tol = Double.Parse(ResultSetParameters["precursor_window_tolerance"].Remove(ResultSetParameters["precursor_window_tolerance"].IndexOf('p'), 3));
-                        this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
-                        this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000169", "parts per million");
-                    }
-                    else if (ResultSetParameters["precursor_window_tolerance"].TrimEnd(null).EndsWith("Da"))
-                    {
-                        var tol = Double.Parse(ResultSetParameters["precursor_window_tolerance"].Remove(ResultSetParameters["precursor_window_tolerance"].LastIndexOf('D'), 2));
-                        this.WriteCVParam("MS:1001412", "search tolerance plus value", $"{ tol}", "UO", "UO:0000221", "dalton");
-                        this.WriteCVParam("MS:1001413", "search tolerance minus value", $"{ tol}", "UO", "UO:0000221", "dalton");
-                    }
-                }
-                else
-                {
-                    this.WriteCVParam("MS:1001412", "search tolerance plus value", $"-1", "UO", "UO:0000221", "dalton");
-                    this.WriteCVParam("MS:1001413", "search tolerance minus value", $"-1", "UO", "UO:0000221", "dalton");
-                }
-
+                this.WriteToleranceParams(ResultSetParameters.GetValueOrDefault("precursor_window_tolerance"));
                 this.WriteEndElement();
 
                 this.WriteStartElement("Threshold");
@@ -1070,7 +1137,7 @@ namespace NRTDP.tdReportConverter
                 this.WriteEndElement();
 
                 //C-Terminal Mods
-                if (peptide.CterminalModID != null)
+                if (CanWriteModification(peptide.CterminalModID, peptide.CterminalModSetID, $"C-terminal on Chem_{peptide.ID}"))
                 {
                     var Ctermmod = db.ModLookup(peptide.CterminalModID, peptide.CterminalModSetID, 0, 0);
                     this.WriteStartElement("Modification");
@@ -1082,7 +1149,7 @@ namespace NRTDP.tdReportConverter
 
                 }
                 //N-Terminal Mods
-                if (peptide.NterminalModID != null)
+                if (CanWriteModification(peptide.NterminalModID, peptide.NterminalModSetID, $"N-terminal on Chem_{peptide.ID}"))
                 {
                     var Ntermmod = db.ModLookup(peptide.NterminalModID, peptide.NterminalModSetID, 0, 0);
                     this.WriteStartElement("Modification");
@@ -1098,6 +1165,9 @@ namespace NRTDP.tdReportConverter
                     var pepmods = db.ParseModHash(peptide.ModificationHash, peptide.ID);
                     foreach (var pepmod in pepmods)
                     {
+                        if (!CanWriteModification(pepmod.ModId, pepmod.ModSetId, $"residue on Chem_{peptide.ID}"))
+                            continue;
+
                         this.WriteStartElement("Modification");
                         this.WriteAttributeString("location", $"{pepmod.StartIndex + 1}");
                         this.WriteAttributeString("monoisotopicMassDelta", $"{pepmod.DiffMono}");
