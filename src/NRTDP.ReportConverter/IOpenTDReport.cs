@@ -9,8 +9,10 @@ namespace NRTDP.tdReportConverter
     public interface IOpenTDReport : IDisposable
     {
         /// <summary>
-        /// True when the report came from ProSight PD rather than TDPortal (detected via the
-        /// empty ResultParameter table). Drives AnalysisSoftware provenance and parameter guards.
+        /// True when the report came from ProSight PD rather than TDPortal. Inferred from the
+        /// absence of TDPortal's assembly versions in DbMetadata, corroborated by an empty
+        /// ResultParameter table, and overridable via <see cref="ReportSource"/>. Drives
+        /// AnalysisSoftware provenance and parameter guards.
         /// </summary>
         bool IsProSightPD { get; }
 
@@ -37,6 +39,15 @@ namespace NRTDP.tdReportConverter
 
 
         Dictionary<int, Dictionary<int, SpectrumIdentificationItem_Hit>> CreateBatchOfHitsWithIons(int ResultSetId, int dataFileId, double FDR = 0.05);
+
+        /// <summary>
+        /// Whether <see cref="CreateBatchOfHitsWithIons"/> would return anything for this result set
+        /// and raw file. The writer has to declare a SpectrumIdentificationList - and the
+        /// SpectrumIdentification that references it - before it streams results into it, so it needs
+        /// to know up front which result sets will actually produce hits: the schema requires at
+        /// least one SpectrumIdentificationResult per list.
+        /// </summary>
+        bool HasHits(int ResultSetId, int dataFileId, double FDR = 0.05);
 
             Dictionary<int, Dictionary<int, ProteinAmbiguityGroup>> GetproteinDetectiondata(int ResultSetId, int dataFileId, double FDR = 0.05);
     }

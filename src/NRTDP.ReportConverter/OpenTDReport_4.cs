@@ -17,24 +17,50 @@ namespace NRTDP.tdReportConverter
         private Dictionary<Tuple<int?, string?>, Modification> _modHash = new Dictionary<Tuple<int?, string?>, Modification>();
 
         private readonly bool _isProSightPD;
+        private readonly string? _softwareVersion;
 
-        public OpenTDReport_4(string path)
+        /// <summary>
+        /// DbMetadata key holding the TDPortal analysis codeset version (e.g. "4.0.0.81").
+        /// TDPortal writes it; ProSight PD does not, which is what makes it a provenance signal.
+        /// </summary>
+        private const string TDPortalCodesetKey = "GenerateBatchedTargetPufDbHT";
+
+        public OpenTDReport_4(string path, ReportSource source = ReportSource.Auto)
         {
             _db = new ReadTDReport_4(path);
             _path = path;
             SetScoreTypeDict();
-            // Empty ResultParameter is the runtime signal: TDPortal populates it, ProSight PD doesn't.
-            // Cache it: it's read several times per file via AnalysisSoftwareId / SoftwareVersion.
-            _isProSightPD = !_db.ResultParameter.Any();
+
+            // Provenance comes from DbMetadata: TDPortal stamps its assembly versions there
+            // (GenerateBatchedTargetPufDbHT, GenerateReportHT, pufdb_version) while ProSight PD
+            // writes only reporting_version. Reading the codeset key answers "who produced this?"
+            // and "which version?" in one query, so the two answers cannot disagree.
+            // Both fields are cached: they are read several times per raw file via
+            // AnalysisSoftwareId / SoftwareVersion.
+            _softwareVersion = _db.DbMetadata.Where(m => m.MetadataKey == TDPortalCodesetKey)
+                                             .Select(m => m.Value).FirstOrDefault();
+
+            _isProSightPD = source switch
+            {
+                ReportSource.TDPortal => false,
+                ReportSource.ProSightPD => true,
+                // Corroborated by the empty ResultParameter table: TDPortal populates search
+                // parameters, ProSight PD leaves them empty. Requiring both signals means a
+                // TDPortal report missing the codeset key is not silently read as ProSight.
+                _ => _softwareVersion is null && !_db.ResultParameter.Any(),
+            };
+
+            Console.WriteLine(source == ReportSource.Auto
+                ? $"Detected {SourceName} report"
+                : $"Report source forced to {SourceName} (--source)");
         }
+
+        private string SourceName => _isProSightPD ? "ProSight PD" : "TDPortal";
 
         public bool IsProSightPD => _isProSightPD;
 
         // ProSight PD stores no software version; TDPortal records the analysis codeset.
-        public string? SoftwareVersion => IsProSightPD
-            ? null
-            : _db.DbMetadata.Where(m => m.MetadataKey == "GenerateBatchedTargetPufDbHT")
-                            .Select(m => m.Value).FirstOrDefault() ?? "4.0.0";
+        public string? SoftwareVersion => IsProSightPD ? null : _softwareVersion;
 
         /// <summary>
         /// Returns 'DBSequences' AKA isoforms for a rawfile (if specified) that pass an FDR.
@@ -71,12 +97,12 @@ namespace NRTDP.tdReportConverter
                                   select new DBSequence
                                   {
                                       ID = group1.Key,
-                                      Accession = group1.Max(x => x.Accession),
-                                      Sequence = group1.Max(x => x.Sequence),
-                                      //UniProtID = group1.Max(x => x.UniProtID),
+                                      Accession = group1.Max(x => x.Accession)!,
+                                      Sequence = group1.Max(x => x.Sequence)!,
+                                      //UniProtID = group1.Max(x => x.UniProtID)!,
                                       TaxonID = group1.Max(x => x.TaxonID),
                                       SciName = "UnIdenitified", //Implement a lookup? - this was removed moving from 3.0 -> 4.0
-                                      Description = group1.Max(x => x.Description)
+                                      Description = group1.Max(x => x.Description)!
                                   };
                 var output = entry_quiry.ToList();
                 return output;
@@ -104,12 +130,12 @@ namespace NRTDP.tdReportConverter
                                   select new DBSequence
                                   {
                                       ID = group1.Key,
-                                      Accession = group1.Max(x => x.Accession),
-                                      Sequence = group1.Max(x => x.Sequence),
-                                      //UniProtID = group1.Max(x => x.UniProtID),
+                                      Accession = group1.Max(x => x.Accession)!,
+                                      Sequence = group1.Max(x => x.Sequence)!,
+                                      //UniProtID = group1.Max(x => x.UniProtID)!,
                                       TaxonID = group1.Max(x => x.TaxonID),
                                       SciName = "UnIdenitified", //Implement a lookup?
-                                      Description = group1.Max(x => x.Description)
+                                      Description = group1.Max(x => x.Description)!
                                   };
                 var output = entry_quiry.ToList();
                 return output;
@@ -267,7 +293,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR && h.DataFileId == dataSetId
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, ID = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex, QValue = q3 == null ? (double?)null : q3.GlobalQvalue } by bio.Id into group1
 
-                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                               ;
 
                 var output = entry_quiry.ToList();
@@ -292,7 +318,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, ID = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex, QValue = q3 == null ? (double?)null : q3.GlobalQvalue } by bio.Id into group1
 
-                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new BiologicalProetoform { ProteoformQValue = group1.Max(x => x.QValue), ChemId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                                      ;
 
                 var output = entry_quiry.ToList();
@@ -323,7 +349,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR && h.DataFileId == dataSetId
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, BioId = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex } by c.Id into group1
 
-                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                               ;
 
                 var output = entry_quiry.ToList();
@@ -343,7 +369,7 @@ namespace NRTDP.tdReportConverter
                                   where q1.GlobalQvalue < FDR && q2.GlobalQvalue < FDR
                                   group new { ChemId = c.Id, IsoSequence = I.Sequence, BioId = bio.Id, Sequence = c.Sequence, ModificationHash = c.ModificationHash, DBSequenceID = bio.IsoformId, CterminalModID = c.CTerminalModificationId, CterminalModSetID = c.CTerminalModificationSetId, NterminalModID = c.NTerminalModificationId, NterminalModSetID = c.NTerminalModificationSetId, StartIndex = bio.StartIndex, EndIndex = bio.EndIndex } by c.Id into group1
 
-                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence), ID = group1.Key, Sequence = group1.Max(x => x.Sequence), ModificationHash = group1.Max(x => x.ModificationHash), DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
+                                  select new ChemicalProetoform { BioId = group1.Max(x => x.ChemId), IsoformSeqence = group1.Max(x => x.IsoSequence)!, ID = group1.Key, Sequence = group1.Max(x => x.Sequence)!, ModificationHash = group1.Max(x => x.ModificationHash)!, DBSequenceID = group1.Max(x => x.DBSequenceID), CterminalModID = group1.Max(x => x.CterminalModID), CterminalModSetID = group1.Max(x => x.CterminalModSetID), NterminalModID = group1.Max(x => x.NterminalModID), NterminalModSetID = group1.Max(x => x.NterminalModSetID), StartIndex = group1.Max(x => x.StartIndex), EndIndex = group1.Max(x => x.EndIndex) }
                ;
 
                 var output = entry_quiry.ToList();
@@ -457,47 +483,78 @@ namespace NRTDP.tdReportConverter
         /// <param name="FDR"></param>
         /// <returns></returns>
 
-        public Dictionary<int, Dictionary<int, SpectrumIdentificationItem_Hit>> CreateBatchOfHitsWithIons(int ResultSetId, int dataFileId, double FDR = 0.05)
+        /// <summary>One (hit, scan) row passing the FDR filters, as projected by <see cref="FilteredHits"/>.</summary>
+        private sealed class HitRow
+        {
+            public double GQValue { get; set; }
+            public double PScore { get; set; }
+            public double EScore { get; set; }
+            public double CScore { get; set; }
+            public double Cleavages { get; set; }
+            public int ChemId { get; set; }
+            public int HitId { get; set; }
+            public double ObsPreMass { get; set; }
+            public double TheoPreMass { get; set; }
+            public int IsoformId { get; set; }
+            public int BioId { get; set; }
+            public int ScanNo { get; set; }
+        }
+
+        /// <summary>
+        /// The hits this reader will report for a result set / raw file pair. Both
+        /// <see cref="CreateBatchOfHitsWithIons"/> and <see cref="HasHits"/> go through here so that
+        /// "a hit the writer will emit" has exactly one definition. The inner joins on HitScore can
+        /// drop rows, so a cheaper hand-written existence check would risk disagreeing with the full
+        /// query - and the writer would then announce a SpectrumIdentificationList that it leaves
+        /// empty, which the mzIdentML schema rejects.
+        /// </summary>
+        private IQueryable<HitRow> FilteredHits(int ResultSetId, int dataFileId, double FDR)
         {
             //get the hits - need Isoform ID, chemId, all bioIds, scan no - group by hit, have multi hits for different scans seperate
-            var hit_query = from h in _db.Hit
-                            join bio in _db.BiologicalProteoform on h.ChemicalProteoformId equals bio.ChemicalProteoformId
-                            join c in _db.ChemicalProteoform on h.ChemicalProteoformId equals c.Id
-                            join hToS in _db.HitToSpectrum on h.Id equals hToS.HitId
-                            join sToSH in _db.ScanHeaderToSpectrum on hToS.SpectrumId equals sToSH.SpectrumId
-                            join SH in _db.ScanHeader on sToSH.ScanHeaderId equals SH.Id
+            return from h in _db.Hit
+                   join bio in _db.BiologicalProteoform on h.ChemicalProteoformId equals bio.ChemicalProteoformId
+                   join c in _db.ChemicalProteoform on h.ChemicalProteoformId equals c.Id
+                   join hToS in _db.HitToSpectrum on h.Id equals hToS.HitId
+                   join sToSH in _db.ScanHeaderToSpectrum on hToS.SpectrumId equals sToSH.SpectrumId
+                   join SH in _db.ScanHeader on sToSH.ScanHeaderId equals SH.Id
 
-                            join ps in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_pScore"] } equals new { id = ps.HitId, type = ps.ScoreTypeId }
-                            join es in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_eValue"] } equals new { id = es.HitId, type = es.ScoreTypeId }
-                            join cs in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_cScore"] } equals new { id = cs.HitId, type = cs.ScoreTypeId }
-                            join pcs in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_interResidueCleavages"] } equals new { id = pcs.HitId, type = pcs.ScoreTypeId }
+                   join ps in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_pScore"] } equals new { id = ps.HitId, type = ps.ScoreTypeId }
+                   join es in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_eValue"] } equals new { id = es.HitId, type = es.ScoreTypeId }
+                   join cs in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_cScore"] } equals new { id = cs.HitId, type = cs.ScoreTypeId }
+                   join pcs in _db.HitScore on new { id = h.Id, type = _scoreType["kelleher_interResidueCleavages"] } equals new { id = pcs.HitId, type = pcs.ScoreTypeId }
 
-                            join q1 in _db.GlobalQualitativeConfidence on new { ID = h.Id, agg = 0 } equals new { ID = q1.HitId, agg = q1.AggregationLevel }
-                            join q2 in _db.GlobalQualitativeConfidence on new { ID = bio.IsoformId, agg = 2 } equals new { ID = q2.ExternalId, agg = q2.AggregationLevel }
-                            orderby h.Id
-                            where h.DataFileId == dataFileId &&
-                                  h.ResultSetId == ResultSetId &&
-                                  q1.GlobalQvalue < FDR &&
-                                  q2.GlobalQvalue < FDR &&
-                                  SH.Level == 2
-                            select new
-                            {
-                                gqvalue = q1.GlobalQvalue,
-                                // cScore is NULL for uncharacterized ProSight PD hits; coalesce to 0 (EF5's old default).
-                                pscore = ps.Value ?? 0,
-                                escore = es.Value ?? 0,
-                                cscore = cs.Value ?? 0,
-                                Cleavages = pcs.Value ?? 0,
-                                ChemId = c.Id,
-                                HitId = h.Id,
-                                ObsPreMass = h.ObservedPrecursorMass,
-                                TheoPreMass = c.MonoisotopicMass,
-                                IsoformId = bio.IsoformId,
-                                BioId = bio.Id,
-                                ScanNo = SH.ScanIndex
-                            };
+                   join q1 in _db.GlobalQualitativeConfidence on new { ID = h.Id, agg = 0 } equals new { ID = q1.HitId, agg = q1.AggregationLevel }
+                   join q2 in _db.GlobalQualitativeConfidence on new { ID = bio.IsoformId, agg = 2 } equals new { ID = q2.ExternalId, agg = q2.AggregationLevel }
+                   orderby h.Id
+                   where h.DataFileId == dataFileId &&
+                         h.ResultSetId == ResultSetId &&
+                         q1.GlobalQvalue < FDR &&
+                         q2.GlobalQvalue < FDR &&
+                         SH.Level == 2
+                   select new HitRow
+                   {
+                       GQValue = q1.GlobalQvalue,
+                       // cScore is NULL for uncharacterized ProSight PD hits; coalesce to 0 (EF5's old default).
+                       PScore = ps.Value ?? 0,
+                       EScore = es.Value ?? 0,
+                       CScore = cs.Value ?? 0,
+                       Cleavages = pcs.Value ?? 0,
+                       ChemId = c.Id,
+                       HitId = h.Id,
+                       ObsPreMass = h.ObservedPrecursorMass,
+                       TheoPreMass = c.MonoisotopicMass,
+                       IsoformId = bio.IsoformId,
+                       BioId = bio.Id,
+                       ScanNo = SH.ScanIndex
+                   };
+        }
 
-            var output = hit_query.ToList();
+        public bool HasHits(int ResultSetId, int dataFileId, double FDR = 0.05) =>
+            FilteredHits(ResultSetId, dataFileId, FDR).Any();
+
+        public Dictionary<int, Dictionary<int, SpectrumIdentificationItem_Hit>> CreateBatchOfHitsWithIons(int ResultSetId, int dataFileId, double FDR = 0.05)
+        {
+            var output = FilteredHits(ResultSetId, dataFileId, FDR).ToList();
 
             var outList = new Dictionary<int, Dictionary<int, SpectrumIdentificationItem_Hit>>();
 
@@ -546,7 +603,7 @@ namespace NRTDP.tdReportConverter
                 {
                     var hit = new SpectrumIdentificationItem_Hit
                     {
-                        GlobalQValue = hitscan.gqvalue,
+                        GlobalQValue = hitscan.GQValue,
                         BioId = new HashSet<int>() { hitscan.BioId },
                         ChemId = hitscan.ChemId,
                         IsoformId = new HashSet<int>() { hitscan.IsoformId },
@@ -554,9 +611,9 @@ namespace NRTDP.tdReportConverter
                         TheoPreMass = hitscan.TheoPreMass,
                         Scans = new HashSet<int>() { hitscan.ScanNo },
                         FragmentIons = fragmentMap[hitscan.HitId], //this.GetFragmentsforHit(hitscan.HitId),
-                        PScore = hitscan.pscore,
-                        CScore = hitscan.cscore,
-                        EValue = hitscan.escore,
+                        PScore = hitscan.PScore,
+                        CScore = hitscan.CScore,
+                        EValue = hitscan.EScore,
                         Cleavages = hitscan.Cleavages
                     };
 
